@@ -1,0 +1,118 @@
+{
+  "locations": [
+    {
+      "id": "gid://shopify/Location/1111111111",
+      "name": "Main Warehouse",
+      "isActive": true
+    },
+    {
+      "id": "gid://shopify/Location/2222222222",
+      "name": "Retail Store",
+      "isActive": true
+    }
+  ],
+  "variants": [
+    {
+      "inventoryItemId": "gid://shopify/InventoryItem/1001",
+      "sku": "WIDGET-BLUE",
+      "productTitle": "Classic Widget",
+      "variantTitle": "Blue",
+      "unitCost": 12.5,
+      "levels": {
+        "gid://shopify/Location/1111111111": {
+          "available": 42,
+          "onHand": 45
+        },
+        "gid://shopify/Location/2222222222": {
+          "available": 8,
+          "onHand": 8
+        }
+      }
+    },
+    {
+      "inventoryItemId": "gid://shopify/InventoryItem/1002",
+      "sku": "WIDGET-RED",
+      "productTitle": "Classic Widget",
+      "variantTitle": "Red",
+      "unitCost": 12.5,
+      "levels": {
+        "gid://shopify/Location/1111111111": {
+          "available": 3,
+          "onHand": 3
+        },
+        "gid://shopify/Location/2222222222": {
+          "available": 0,
+          "onHand": 0
+        }
+      }
+    },
+    {
+      "inventoryItemId": "gid://shopify/InventoryItem/1003",
+      "sku": "GADGET-PRO",
+      "productTitle": "Gadget Pro",
+      "variantTitle": "",
+      "unitCost": 34.0,
+      "levels": {
+        "gid://shopify/Location/1111111111": {
+          "available": 120,
+          "onHand": 120
+        },
+        "gid://shopify/Location/2222222222": {
+          "available": 25,
+          "onHand": 30
+        }
+      }
+    },
+    {
+      "inventoryItemId": "gid://shopify/InventoryItem/1004",
+      "sku": "GADGET-PRO-ACC",
+      "productTitle": "Gadget Pro",
+      "variantTitle": "Accessory Kit",
+      "unitCost": 8.75,
+      "levels": {
+        "gid://shopify/Location/1111111111": {
+          "available": 7,
+          "onHand": 10
+        },
+        "gid://shopify/Location/2222222222": {
+          "available": 2,
+          "onHand": 2
+        }
+      }
+    },
+    {
+      "inventoryItemId": "gid://shopify/InventoryItem/1005",
+      "sku": "DOOHICKEY-STD",
+      "productTitle": "Doohickey",
+      "variantTitle": "Standard",
+      "unitCost": 5.2,
+      "levels": {
+        "gid://shopify/Location/1111111111": {
+          "available": 0,
+          "onHand": 0
+        },
+        "gid://shopify/Location/2222222222": {
+          "available": 0,
+          "onHand": 0
+        }
+      }
+    },
+    {
+      "inventoryItemId": "gid://shopify/InventoryItem/1006",
+      "sku": "PACK-BOX-S",
+      "productTitle": "Packaging",
+      "variantTitle": "Small Box",
+      "unitCost": 0.85,
+      "levels": {
+        "gid://shopify/Location/1111111111": {
+          "available": 500,
+          "onHand": 500
+        },
+        "gid://shopify/Location/2222222222": {
+          "available": 120,
+          "onHand": 120
+        }
+      }
+    }
+  ]
+}
