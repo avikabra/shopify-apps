@@ -1,0 +1,30 @@
+/* Simple Returns customer portal — intentionally plain so it inherits the theme. */
+#simple-returns-portal { max-width: 720px; margin: 0 auto; padding: 1rem 0; }
+#simple-returns-portal .sr-card {
+  border: 1px solid rgba(0,0,0,.12); border-radius: 8px;
+  padding: 1.25rem; margin-bottom: 1rem; background: #fff;
+}
+#simple-returns-portal .sr-error {
+  background: #fdecea; border: 1px solid #f5c6cb; color: #a71d1d;
+  padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem;
+}
+#simple-returns-portal .sr-item { border-top: 1px solid rgba(0,0,0,.08); padding: .75rem 0; }
+#simple-returns-portal .sr-item:first-of-type { border-top: none; }
+#simple-returns-portal label { display: block; margin: .5rem 0; }
+#simple-returns-portal input[type=text],
+#simple-returns-portal input[type=email],
+#simple-returns-portal input[type=number],
+#simple-returns-portal select {
+  padding: .5rem .65rem; border: 1px solid rgba(0,0,0,.25); border-radius: 6px;
+  font-size: 1rem; max-width: 100%;
+}
+#simple-returns-portal .sr-btn {
+  display: inline-block; padding: .65rem 1.4rem; border: none; border-radius: 6px;
+  background: #008060; color: #fff; font-size: 1rem; cursor: pointer;
+}
+#simple-returns-portal .sr-btn:disabled { opacity: .55; cursor: wait; }
+#simple-returns-portal .sr-btn-secondary { background: transparent; color: inherit; border: 1px solid rgba(0,0,0,.25); }
+#simple-returns-portal .sr-muted { opacity: .65; font-size: .9rem; }
+#simple-returns-portal .sr-steps { display: flex; gap: .5rem; margin-bottom: 1rem; }
+#simple-returns-portal .sr-step { flex: 1; height: 4px; border-radius: 2px; background: rgba(0,0,0,.12); }
+#simple-returns-portal .sr-step.done { background: #008060; }

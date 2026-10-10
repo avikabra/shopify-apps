@@ -1,0 +1,37 @@
+# Render deploy config (render.yaml). Connect the repo, Render picks this up.
+# Set the secret env vars in the Render dashboard after first deploy.
+services:
+  - type: web
+    name: simple-returns
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: SHOPIFY_CLIENT_MODE
+        value: real
+      - key: SHIPPING_PROVIDER
+        value: real
+      - key: EMAIL_PROVIDER
+        value: smtp
+      - key: SKIP_AUTO_CREATE_TABLES
+        value: 1
+      - key: APP_URL
+        sync: false # set to https://<your-app>.onrender.com after deploy
+      - key: DATABASE_URL
+        sync: false # e.g. postgresql+psycopg://... (Render Postgres)
+      - key: SHOPIFY_API_KEY
+        sync: false
+      - key: SHOPIFY_API_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false # `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+      - key: EASYPOST_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false

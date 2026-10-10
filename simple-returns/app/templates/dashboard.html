@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Return requests — Simple Returns{% endblock %}
+{% block content %}
+<h1>Return requests</h1>
+
+<div class="filters">
+  <a href="/app{% if request.query_params.get('shop') %}?shop={{ request.query_params.get('shop') }}{% endif %}"
+     class="chip {% if not active_status %}active{% endif %}">All</a>
+  {% for s in ReturnStatus %}
+  <a href="/app?status={{ s.value }}{% if request.query_params.get('shop') %}&shop={{ request.query_params.get('shop') }}{% endif %}"
+     class="chip {% if active_status == s.value %}active{% endif %}">
+    {{ s.value.replace('_', ' ') }} ({{ counts.get(s.value, 0) }})
+  </a>
+  {% endfor %}
+</div>
+
+{% if not requests %}
+<p class="muted">No return requests{% if active_status %} with status “{{ active_status }}”{% endif %} yet.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>ID</th><th>Order</th><th>Customer</th><th>Resolution</th><th>Items</th><th>Status</th><th>Created</th></tr>
+  </thead>
+  <tbody>
+  {% for r in requests %}
+    <tr>
+      <td><a href="/app/requests/{{ r.id }}{% if request.query_params.get('shop') %}?shop={{ request.query_params.get('shop') }}{% endif %}">#{{ r.id }}</a></td>
+      <td>{{ r.order_name }}</td>
+      <td>{{ r.customer_email }}</td>
+      <td>{{ r.resolution.value.replace('_', ' ') }}</td>
+      <td>{{ r.items | length }}</td>
+      <td><span class="status status-{{ r.status.value }}">{{ r.status.value.replace('_', ' ') }}</span></td>
+      <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

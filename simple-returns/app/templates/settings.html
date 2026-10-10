@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Settings — Simple Returns{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+{% set shop_qs = request.query_params.get('shop', '') %}
+{% set wh = shop_settings.get('warehouse_address', {}) %}
+
+<div class="card">
+  <h2>Store</h2>
+  <form method="post" action="/app/settings/general{% if shop_qs %}?shop={{ shop_qs }}{% endif %}">
+    <label>Brand name <input type="text" name="brand_name" value="{{ shop_settings.get('brand_name', '') }}" size="40"></label>
+    <label>Support email <input type="email" name="support_email" value="{{ shop_settings.get('support_email', '') }}" size="40"></label>
+    <label>Extra storefront domains (comma-separated, for custom domains)
+      <input type="text" name="custom_domains" value="{{ shop_settings.get('custom_domains', '') }}" size="60"
+             placeholder="shop.example.com"></label>
+    <h3>Warehouse address (return labels ship here)</h3>
+    <label>Street <input type="text" name="wh_street1" value="{{ wh.get('street1', '') }}" size="50"></label>
+    <label>Street 2 <input type="text" name="wh_street2" value="{{ wh.get('street2', '') }}" size="50"></label>
+    <label>City <input type="text" name="wh_city" value="{{ wh.get('city', '') }}"></label>
+    <label>State <input type="text" name="wh_state" value="{{ wh.get('state', '') }}" size="10"></label>
+    <label>ZIP <input type="text" name="wh_zip" value="{{ wh.get('zip', '') }}" size="12"></label>
+    <label>Country <input type="text" name="wh_country" value="{{ wh.get('country', 'US') }}" size="4"></label>
+    <p><button type="submit" class="btn primary">Save</button></p>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Auto-approval rules</h2>
+  <p class="muted">Rules are checked in order (lowest priority number first). The first rule a request
+  fully matches auto-approves it; otherwise the request lands in your review queue.</p>
+  {% if rules %}
+  <table>
+    <thead><tr><th>Name</th><th>Window</th><th>Reasons</th><th>Excluded tags</th><th>Max qty</th><th>Enabled</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rules %}
+      <tr>
+        <td>{{ r.name }} <span class="muted">(priority {{ r.priority }})</span></td>
+        <td>{{ r.window_days }} days</td>
+        <td>{{ r.auto_approve_reasons | join(', ') or 'any' }}</td>
+        <td>{{ r.excluded_product_tags | join(', ') or '—' }}</td>
+        <td>{{ r.max_quantity }}</td>
+        <td>{{ 'yes' if r.enabled else 'no' }}</td>
+        <td>
+          <form method="post" action="/app/settings/rules/{{ r.id }}/delete{% if shop_qs %}?shop={{ shop_qs }}{% endif %}" class="inline">
+            <button type="submit" class="btn danger small">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No rules yet — every request will need manual review.</p>
+  {% endif %}
+
+  <h3>Add a rule</h3>
+  <form method="post" action="/app/settings/rules{% if shop_qs %}?shop={{ shop_qs }}{% endif %}">
+    <label>Name <input type="text" name="name" size="30" placeholder="Default 30-day window"></label>
+    <label>Return window (days) <input type="number" name="window_days" value="30" min="1" max="365"></label>
+    <label>Auto-approve reasons (comma-separated, blank = any)
+      <input type="text" name="reasons" size="50" placeholder="DEFECTIVE, WRONG_ITEM"></label>
+    <label>Excluded product tags (comma-separated)
+      <input type="text" name="excluded_tags" size="50" placeholder="final-sale"></label>
+    <label>Max quantity <input type="number" name="max_quantity" value="10" min="1" max="999"></label>
+    <label>Enabled
+      <select name="enabled"><option value="yes">yes</option><option value="no">no</option></select>
+    </label>
+    <p><button type="submit" class="btn primary">Add rule</button></p>
+  </form>
+  <p class="muted">Valid reasons: DEFECTIVE, WRONG_ITEM, NOT_AS_DESCRIBED, SIZE_TOO_SMALL,
+  SIZE_TOO_LARGE, STYLE, COLOR, UNWANTED, OTHER, UNKNOWN.</p>
+</div>
+{% endblock %}

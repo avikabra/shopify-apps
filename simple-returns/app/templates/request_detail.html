@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Request #{{ req.id }} — Simple Returns{% endblock %}
+{% block content %}
+<p><a href="/app{% if request.query_params.get('shop') %}?shop={{ request.query_params.get('shop') }}{% endif %}">&larr; All requests</a></p>
+<h1>Request #{{ req.id }} <span class="status status-{{ req.status.value }}">{{ req.status.value.replace('_', ' ') }}</span></h1>
+
+{% if msg %}
+<p class="flash">{{ msg }}</p>
+{% endif %}
+
+<div class="grid2">
+<div class="card">
+  <h2>Order</h2>
+  <dl>
+    <dt>Order</dt><dd>{{ req.order_name }}</dd>
+    <dt>Customer</dt><dd>{{ req.customer_name or '—' }} &lt;{{ req.customer_email }}&gt;</dd>
+    <dt>Resolution</dt><dd>{{ req.resolution.value.replace('_', ' ') }}</dd>
+    <dt>Created</dt><dd>{{ req.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+    {% if req.decided_at %}
+    <dt>Decided</dt><dd>{{ req.decided_at.strftime('%Y-%m-%d %H:%M') }} by {{ req.decided_by }}</dd>
+    {% endif %}
+    {% if req.shopify_return_id %}
+    <dt>Shopify return</dt><dd class="mono">{{ req.shopify_return_id }}</dd>
+    {% endif %}
+    {% if req.tracking_number %}
+    <dt>Tracking</dt><dd>{{ req.tracking_number }}</dd>
+    {% endif %}
+    {% if req.label_url %}
+    <dt>Label</dt><dd><a href="{{ req.label_url }}" target="_blank" rel="noopener">Download label</a></dd>
+    {% endif %}
+    {% if req.refund_id %}
+    <dt>Refund</dt><dd class="mono">{{ req.refund_id }} — {{ req.total_refund_amount }} {{ req.currency }}</dd>
+    {% endif %}
+    {% if req.gift_card_code %}
+    <dt>Gift card</dt><dd><span class="mono">{{ req.gift_card_code }}</span> — {{ req.total_refund_amount }} {{ req.currency }}</dd>
+    {% endif %}
+    {% if req.draft_order_id %}
+    <dt>Exchange draft order</dt><dd class="mono">{{ req.draft_order_id }}</dd>
+    {% endif %}
+    {% if req.decline_note %}
+    <dt>Decline note</dt><dd>{{ req.decline_note }}</dd>
+    {% endif %}
+  </dl>
+</div>
+
+<div class="card">
+  <h2>Items</h2>
+  <table>
+    <thead><tr><th>Item</th><th>Qty</th><th>Reason</th><th>Unit price</th></tr></thead>
+    <tbody>
+    {% for i in req.items %}
+      <tr>
+        <td>{{ i.title }}{% if i.variant_title %} <span class="muted">({{ i.variant_title }})</span>{% endif %}</td>
+        <td>{{ i.quantity }}</td>
+        <td>{{ i.reason }}</td>
+        <td>{{ i.unit_price }} {{ req.currency }}</td>
+      </tr>
+      {% if i.note %}<tr><td colspan="4" class="muted">Note: {{ i.note }}</td></tr>{% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  <p><strong>Refund preview:</strong> {{ refund_preview }} {{ req.currency }}</p>
+</div>
+</div>
+
+<div class="card">
+  <h2>Actions</h2>
+  {% set shop_qs = request.query_params.get('shop', '') %}
+  {% if req.status.value in ['requested', 'pending_review'] %}
+  <form method="post" action="/app/requests/{{ req.id }}/approve{% if shop_qs %}?shop={{ shop_qs }}{% endif %}" class="inline">
+    <button type="submit" class="btn primary">Approve &amp; send label</button>
+  </form>
+  <form method="post" action="/app/requests/{{ req.id }}/reject{% if shop_qs %}?shop={{ shop_qs }}{% endif %}" class="inline">
+    <input type="text" name="note" placeholder="Reason for customer (optional)" size="40">
+    <button type="submit" class="btn danger">Reject</button>
+  </form>
+  {% elif req.status.value in ['approved', 'label_created'] %}
+  <form method="post" action="/app/requests/{{ req.id }}/settle{% if shop_qs %}?shop={{ shop_qs }}{% endif %}" class="inline">
+    <label><input type="checkbox" name="restock" value="yes" checked> Restock items</label>
+    <button type="submit" class="btn primary">
+      Mark received &amp; {% if req.resolution.value == 'refund' %}issue refund{% elif req.resolution.value == 'store_credit' %}issue store credit{% else %}send exchange{% endif %}
+    </button>
+  </form>
+  {% if not req.label_url %}
+  <form method="post" action="/app/requests/{{ req.id }}/label{% if shop_qs %}?shop={{ shop_qs }}{% endif %}" class="inline">
+    <button type="submit" class="btn">Retry label</button>
+  </form>
+  {% endif %}
+  {% else %}
+  <p class="muted">No actions available — this request is {{ req.status.value.replace('_', ' ') }}.</p>
+  {% endif %}
+</div>
+{% endblock %}

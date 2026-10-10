@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Billing — Simple Returns{% endblock %}
+{% block content %}
+<h1>Billing</h1>
+{% set shop_qs = request.query_params.get('shop', '') %}
+
+<div class="grid2">
+{% for p in plans %}
+<div class="card {% if p.current %}current{% endif %}">
+  <h2>{{ p.name }} {% if p.current %}<span class="chip active">current</span>{% endif %}</h2>
+  <p class="price">${{ p.price_cents // 100 }}<span class="muted">/month</span></p>
+  <p>{% if p.monthly_returns %}{{ p.monthly_returns }} returns/month{% else %}Unlimited returns{% endif %}</p>
+  {% if not p.current %}
+  <form method="post" action="/app/billing/plan{% if shop_qs %}?shop={{ shop_qs }}{% endif %}">
+    <input type="hidden" name="plan" value="{{ p.id }}">
+    <button type="submit" class="btn">Switch to {{ p.name }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+
+<p>Usage in {{ month }}: <strong>{{ used }}</strong> returns
+{% if limit %} of {{ limit }} included{% endif %}.</p>
+
+<p class="muted">Note: this build records the plan directly. The production build bills
+through Shopify's Billing API (recurring app subscriptions) — see BUILD_NOTES.md.</p>
+{% endblock %}

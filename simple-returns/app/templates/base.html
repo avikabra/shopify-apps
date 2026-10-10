@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Simple Returns{% endblock %}</title>
+<link rel="stylesheet" href="/static/admin.css">
+{% if api_key %}
+<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+<script>
+  // App Bridge (embedded app). In dev/mock mode api_key is empty and this is a no-op.
+  if (window['app-bridge']) {
+    const params = new URLSearchParams(window.location.search);
+    window.shopify = window['app-bridge'].createApp({
+      apiKey: '{{ api_key }}',
+      host: params.get('host') || '',
+      forceRedirect: true,
+    });
+  }
+</script>
+{% endif %}
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Simple Returns <span class="muted">&amp; Exchanges</span></div>
+  <nav>
+    <a href="/app{% if request.query_params.get('shop') %}?shop={{ request.query_params.get('shop') }}{% endif %}">Requests</a>
+    <a href="/app/settings{% if request.query_params.get('shop') %}?shop={{ request.query_params.get('shop') }}{% endif %}">Settings</a>
+    <a href="/app/billing{% if request.query_params.get('shop') %}?shop={{ request.query_params.get('shop') }}{% endif %}">Billing</a>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

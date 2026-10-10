@@ -1,0 +1,8 @@
+# Learn more about configuring a theme app extension:
+# https://shopify.dev/docs/api/development/build-a-theme-app-extension/configuration
+
+[[extensions]]
+type = "theme"
+name = "return-portal"
+
+  [extensions.settings]
