@@ -1,0 +1,225 @@
+// Prisma schema for Simple Purchase Orders & Stock Alerts
+// Database: PostgreSQL. Session table shape matches
+// @shopify/shopify-app-session-storage-prisma expectations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Shopify OAuth sessions (managed by @shopify/shopify-app-session-storage-prisma)
+// ---------------------------------------------------------------------------
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean?
+  locale              String?
+  collaborator        Boolean?
+  emailVerified       Boolean?
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// App data
+// ---------------------------------------------------------------------------
+model Shop {
+  id            String    @id @default(cuid())
+  domain        String    @unique
+  name          String?
+  email         String?
+  installedAt   DateTime  @default(now())
+  uninstalledAt DateTime?
+
+  // Low-stock digest settings (digestHourUtc is a UTC hour; 13 ≈ 8am ET in winter)
+  digestEnabled Boolean @default(true)
+  digestEmail   String?
+  digestHourUtc Int     @default(13)
+  instantAlerts Boolean @default(false)
+
+  suppliers       Supplier[]
+  purchaseOrders  PurchaseOrder[]
+  transfers       StockTransfer[]
+  thresholds      StockThreshold[]
+  receivingEvents ReceivingEvent[]
+  sequences       Sequence[]
+}
+
+model Supplier {
+  id           String        @id @default(cuid())
+  shopId       String
+  shop         Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name         String
+  contactName  String?
+  email        String?
+  phone        String?
+  notes        String?
+  skus         SupplierSku[]
+  purchaseOrders PurchaseOrder[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([shopId])
+}
+
+model SupplierSku {
+  id              String   @id @default(cuid())
+  supplierId      String
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  sku             String
+  variantTitle    String?
+  unitCost        Decimal? @db.Decimal(12, 2)
+
+  @@unique([supplierId, inventoryItemId])
+  @@index([supplierId])
+}
+
+// ALL_LOCATIONS is used instead of NULL so the uniqueness constraint works
+// in Postgres (NULLs are treated as distinct values).
+model StockThreshold {
+  id              String @id @default(cuid())
+  shopId          String
+  shop            Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  sku             String
+  productTitle    String?
+  variantTitle    String?
+  locationId      String @default("ALL_LOCATIONS")
+  locationName    String?
+  minQty          Int    @default(0)
+
+  @@unique([shopId, inventoryItemId, locationId])
+  @@index([shopId])
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  shopId       String
+  shop         Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  supplierId   String
+  supplier     Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  poNumber     String
+  status       PurchaseOrderStatus @default(DRAFT)
+  notes        String?
+  expectedAt   DateTime?
+  locationId   String              @default("ALL_LOCATIONS")
+  locationName String?
+  sentAt       DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  lines        PurchaseOrderLine[]
+
+  @@unique([shopId, poNumber])
+  @@index([shopId, status])
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  sku             String
+  productTitle    String?
+  variantTitle    String?
+  unitCost        Decimal?      @db.Decimal(12, 2)
+  qtyOrdered      Int
+  qtyReceived     Int           @default(0)
+
+  @@index([purchaseOrderId])
+}
+
+enum StockTransferStatus {
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+model StockTransfer {
+  id               String              @id @default(cuid())
+  shopId           String
+  shop             Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  transferNumber   String
+  fromLocationId   String
+  fromLocationName String
+  toLocationId     String
+  toLocationName   String
+  status           StockTransferStatus @default(IN_TRANSIT)
+  notes            String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  receivedAt       DateTime?
+  lines            StockTransferLine[]
+
+  @@unique([shopId, transferNumber])
+  @@index([shopId, status])
+}
+
+model StockTransferLine {
+  id              String        @id @default(cuid())
+  stockTransferId String
+  stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  sku             String
+  productTitle    String?
+  variantTitle    String?
+  qty             Int
+
+  @@index([stockTransferId])
+}
+
+enum ReceivingEventType {
+  PO_RECEIVE
+  TRANSFER_RECEIVE
+  MANUAL_ADJUST
+}
+
+model ReceivingEvent {
+  id              String             @id @default(cuid())
+  shopId          String
+  shop            Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  type            ReceivingEventType
+  refId           String?
+  refNumber       String?
+  inventoryItemId String
+  sku             String
+  locationId      String
+  locationName    String?
+  qty             Int
+  note            String?
+  createdAt       DateTime           @default(now())
+
+  @@index([shopId, createdAt])
+}
+
+// Per-shop monotonic counters for human-friendly PO / transfer numbers.
+model Sequence {
+  shopId String
+  name   String // "po" | "transfer"
+  value  Int    @default(0)
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@id([shopId, name])
+}
