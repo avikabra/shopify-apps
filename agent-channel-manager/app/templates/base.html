@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="shopify-api-key" content="{{ api_key or settings.shopify_api_key }}">
+<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+<script>
+  // Carry the App Bridge session token on in-app navigation and fetches
+  // so the server can authenticate with session tokens (Shopify embedded
+  // app requirement). Plain links otherwise lose the token after the
+  // first page.
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (!window.shopify || !window.shopify.idToken) return;
+    try {
+      const token = await window.shopify.idToken();
+      if (!token) return;
+      document.querySelectorAll('a[href^="/app"]').forEach((a) => {
+        const url = new URL(a.getAttribute('href'), window.location.origin);
+        if (!url.searchParams.has('id_token')) {
+          url.searchParams.set('id_token', token);
+          a.setAttribute('href', url.pathname + url.search);
+        }
+      });
+      document.querySelectorAll('form[action^="/app"]').forEach((f) => {
+        const url = new URL(f.getAttribute('action'), window.location.origin);
+        if (!url.searchParams.has('id_token')) {
+          url.searchParams.set('id_token', token);
+          f.setAttribute('action', url.pathname + url.search);
+        }
+      });
+      const origFetch = window.fetch;
+      window.fetch = (input, init = {}) => {
+        const headers = new Headers(init.headers || {});
+        if (!headers.has('Authorization')) {
+          headers.set('Authorization', 'Bearer ' + token);
+        }
+        return origFetch(input, { ...init, headers });
+      };
+    } catch (e) {
+      /* App Bridge unavailable (opened outside Shopify admin) — the
+         server falls back to cookie/HMAC auth. */
+    }
+  });
+</script>
+<title>{% block title %}Agent Channel Manager{% endblock %}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; color: #1a1a1a; background: #f6f6f7; }
+  header { background: #fff; border-bottom: 1px solid #e1e3e5; padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
+  header h1 { font-size: 18px; margin: 0; }
+  nav a { margin-right: 16px; text-decoration: none; color: #5c5f62; font-weight: 500; }
+  nav a.active { color: #008060; }
+  .plan-badge { margin-left: auto; font-size: 12px; background: #e3f2ec; color: #007a5c; padding: 4px 10px; border-radius: 12px; font-weight: 600; }
+  main { max-width: 1100px; margin: 24px auto; padding: 0 24px 48px; }
+  .card { background: #fff; border: 1px solid #e1e3e5; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { margin-top: 0; font-size: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  th { color: #6d7175; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .muted { color: #6d7175; }
+  .btn { display: inline-block; background: #008060; color: #fff; border: none; border-radius: 4px; padding: 8px 16px; font-size: 14px; cursor: pointer; text-decoration: none; }
+  .btn:hover { background: #006e52; }
+  .btn-danger { background: #d72c0d; }
+  .btn-danger:hover { background: #b3240a; }
+  .btn-secondary { background: #fff; color: #1a1a1a; border: 1px solid #c9cccf; }
+  input[type=text], input[type=number], select, textarea { padding: 8px; border: 1px solid #c9cccf; border-radius: 4px; font-size: 14px; }
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+  .form-row label { display: flex; flex-direction: column; font-size: 12px; color: #6d7175; gap: 4px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+  .stat { background: #fff; border: 1px solid #e1e3e5; border-radius: 8px; padding: 16px; }
+  .stat .num { font-size: 28px; font-weight: 700; }
+  .stat .lbl { font-size: 12px; color: #6d7175; text-transform: uppercase; }
+  .warn { background: #fff8e1; border: 1px solid #f5c518; border-radius: 6px; padding: 12px; margin: 12px 0; font-size: 14px; }
+  .ok { color: #007a5c; font-weight: 600; }
+  .risk { color: #d72c0d; font-weight: 600; }
+  .inline-form { display: inline; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #f1f1f1; margin: 2px; }
+  .chip.hide { background: #fde8e8; color: #b3240a; }
+  .chip.show { background: #e3f2ec; color: #007a5c; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Channel Manager</h1>
+  <nav>
+    <a href="/app{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Dashboard</a>
+    <a href="/app/visibility{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Visibility</a>
+    <a href="/app/pricing{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Pricing</a>
+    <a href="/app/promotions{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Promotions</a>
+    <a href="/app/simulator{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Simulator</a>
+    <a href="/app/billing{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Billing</a>
+  </nav>
+  <span class="plan-badge">{{ shop.plan.value|upper }} plan</span>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "12bf48d4cf78de600d31a697d805dd71"
+name = "Simple Purchase Orders"
+application_url = "https://simple-purchase-orders-production.up.railway.app"
+embedded = true
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/api/webhooks"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/api/webhooks"
+  topics = [ "app/uninstalled" ]
+
+[auth]
+redirect_urls = [
+  "https://simple-purchase-orders-production.up.railway.app/api/auth/callback"
+]
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_products,read_inventory,write_inventory,read_locations"
+optional_scopes = [ ]
+use_legacy_install_flow = false

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from .protocol import (
+    AppSubscription,
     DraftOrder,
     GiftCard,
     LineItemSnapshot,
@@ -40,6 +41,10 @@ class MockShopifyClient:
         self.draft_orders: list[dict] = []
         self.invoices_sent: list[str] = []
         self.registered_webhooks: list[tuple[str, str]] = []
+        # Billing fixtures: subscription GID -> dict(status, name, ...).
+        self.subscriptions: dict[str, dict] = {}
+        self.created_subscriptions: list[dict] = []
+        self.cancelled_subscriptions: list[str] = []
 
     # -- fixture data ----------------------------------------------------
 
@@ -235,6 +240,61 @@ class MockShopifyClient:
                 VariantOption(_gid("ProductVariant", 213), "Black / L", "HOODIE-BLK-L", Decimal("49.99")),
             ]
         return []
+
+    # -- billing (mock) --------------------------------------------------
+
+    async def get_active_app_subscriptions(
+        self, shop_domain: str
+    ) -> list[AppSubscription]:
+        return [
+            AppSubscription(
+                id=sid,
+                name=sub["name"],
+                status=sub["status"],
+                trial_days=sub.get("trial_days", 0),
+            )
+            for sid, sub in self.subscriptions.items()
+            if sub["status"] in ("ACTIVE", "TRIALING", "PENDING")
+        ]
+
+    async def create_app_subscription(
+        self,
+        shop_domain: str,
+        name: str,
+        price_cents: int,
+        currency: str,
+        trial_days: int,
+        return_url: str,
+        test: bool = True,
+    ) -> tuple[str, str]:
+        sid = _gid("AppSubscription", next(self._counter))
+        self.subscriptions[sid] = {
+            "name": name,
+            "status": "PENDING",
+            "price_cents": price_cents,
+            "trial_days": trial_days,
+        }
+        self.created_subscriptions.append(
+            {"id": sid, "name": name, "price_cents": price_cents, "trial_days": trial_days}
+        )
+        # In the mock, the merchant "approves" by visiting the callback URL.
+        return sid, f"{return_url}&subscription_id={sid}"
+
+    async def cancel_app_subscription(
+        self, shop_domain: str, subscription_id: str
+    ) -> bool:
+        sub = self.subscriptions.get(subscription_id)
+        if sub is None:
+            raise ShopifyError(f"Unknown subscription: {subscription_id}")
+        sub["status"] = "CANCELLED"
+        self.cancelled_subscriptions.append(subscription_id)
+        return True
+
+    def approve_mock_subscription(self, subscription_id: str) -> None:
+        """Test helper: simulate the merchant approving on Shopify."""
+        sub = self.subscriptions.get(subscription_id)
+        if sub is not None:
+            sub["status"] = "ACTIVE"
 
     @staticmethod
     def new_idempotency_key() -> str:

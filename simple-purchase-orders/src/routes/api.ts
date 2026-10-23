@@ -4,7 +4,28 @@ import { config } from '../config.js';
 import { sessionFromReq } from '../middleware/devAuth.js';
 import { graphqlAdmin, clientForShop } from '../shopify/client.js';
 import { badRequest, statusOf } from '../lib/errors.js';
-import { hasActiveSubscription, createSubscription } from '../shopify/billing.js';
+import {
+  hasActiveSubscription,
+  createSubscription,
+  cancelSubscription,
+  getActiveSubscriptions,
+} from '../shopify/billing.js';
+import {
+  PLANS,
+  FEATURE_MIN_PLAN,
+  planAtLeast,
+  skuLimitLabel,
+  type PlanKey,
+} from '../lib/plans.js';
+import {
+  countTrackedSkus,
+  currentPlan,
+  isSkuTracked,
+  requireFeature,
+  requireSkuCapacity,
+  setPlan,
+  PlanLimitError,
+} from '../services/billing.js';
 import type { Ctx } from '../services/purchaseOrders.js';
 import {
   createPurchaseOrder,
@@ -78,31 +99,110 @@ api.use(resolveShop);
 
 /* ---------- billing ---------- */
 
+/**
+ * Freemium gate: every shop gets at least the free plan, so this never blocks.
+ * It best-effort syncs the plan from Shopify so downgrades/cancellations are
+ * picked up promptly. Per-feature limits are enforced by planGate() below.
+ */
 async function requireBilling(req: Request, res: Response, next: NextFunction) {
   try {
     if (!config.billingEnforce) return next();
     const ctx = reqCtx(req);
-    if (!ctx.accessToken || config.mockShopify) return next(); // can't verify in dev/mock
-    const active = await hasActiveSubscription(ctx.shopDomain, ctx.accessToken);
-    if (active) return next();
-    res.status(402).json({
-      error: 'A subscription is required to use this app.',
-      billingUrl: '/api/billing/start?plan=starter',
-    });
+    await currentPlan(ctx);
+    next();
   } catch (err) {
     next(err);
   }
 }
 
+/** Wrap a plan check so 402s carry the billingUrl the frontend redirects to. */
+function planGate(check: (req: Request, ctx: Ctx) => Promise<void>) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!config.billingEnforce) return next();
+      await check(req, reqCtx(req));
+      next();
+    } catch (err) {
+      if (err instanceof PlanLimitError) {
+        res.status(402).json({ error: err.message, billingUrl: err.billingUrl });
+        return;
+      }
+      next(err);
+    }
+  };
+}
+
+const requireFeaturePlan = (feature: keyof typeof FEATURE_MIN_PLAN) =>
+  planGate((_req, ctx) => requireFeature(ctx, feature, true));
+
+const requireSkuForBody =
+  (field: string) =>
+  planGate(async (req, ctx) => {
+    const itemId = req.body?.[field] ? String(req.body[field]) : undefined;
+    const addingNew = itemId ? !(await isSkuTracked(ctx.shopId, itemId)) : true;
+    await requireSkuCapacity(ctx, true, addingNew);
+  });
+
+/** Full billing state for the Billing page. */
+api.get('/billing', async (req, res, next) => {
+  try {
+    const ctx = reqCtx(req);
+    const plan = await currentPlan(ctx);
+    const skusUsed = await countTrackedSkus(ctx.shopId);
+    let subscription: { id: string; name: string; status: string } | null = null;
+    if (ctx.accessToken && !config.mockShopify) {
+      try {
+        const subs = await getActiveSubscriptions(ctx.shopDomain, ctx.accessToken);
+        if (subs[0]) {
+          subscription = { id: subs[0].id, name: subs[0].name, status: subs[0].status };
+        }
+      } catch {
+        // Best-effort; DB plan is the source of truth for the UI.
+      }
+    }
+    res.json({
+      plan,
+      plans: Object.values(PLANS).map((p) => ({
+        key: p.key,
+        name: p.name,
+        price: p.price,
+        trialDays: p.trialDays,
+        skuLimit: p.skuLimit,
+        skuLimitLabel: skuLimitLabel(p.key),
+        blurb: p.blurb,
+        current: p.key === plan,
+      })),
+      skusUsed,
+      skuLimit: PLANS[plan].skuLimit,
+      skuLimitLabel: skuLimitLabel(plan),
+      features: Object.fromEntries(
+        Object.keys(FEATURE_MIN_PLAN).map((f) => [
+          f,
+          {
+            minPlan: FEATURE_MIN_PLAN[f],
+            minPlanName: PLANS[FEATURE_MIN_PLAN[f]].name,
+            allowed: planAtLeast(plan, FEATURE_MIN_PLAN[f]),
+          },
+        ]),
+      ),
+      subscription,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 api.get('/billing/status', async (req, res, next) => {
   try {
     const ctx = reqCtx(req);
+    const plan = await currentPlan(ctx);
     const active =
       !config.billingEnforce ||
       !ctx.accessToken ||
       config.mockShopify ||
+      plan !== 'free' ||
       (await hasActiveSubscription(ctx.shopDomain, ctx.accessToken));
-    res.json({ active, enforce: config.billingEnforce });
+    res.json({ active, enforce: config.billingEnforce, plan });
   } catch (err) {
     next(err);
   }
@@ -111,15 +211,30 @@ api.get('/billing/status', async (req, res, next) => {
 api.get('/billing/start', async (req, res, next) => {
   try {
     const ctx = reqCtx(req);
-    const plan = req.query.plan === 'growth' ? 'growth' : 'starter';
+    const raw = String(req.query.plan ?? 'starter');
+    const plan: PlanKey = raw === 'growth' ? 'growth' : raw === 'free' ? 'free' : 'starter';
     if (!ctx.accessToken || config.mockShopify) {
       throw badRequest('Billing is not available in mock mode.');
+    }
+    if (plan === 'free') {
+      // Downgrade path: cancel any active subscription, then record free.
+      try {
+        const subs = await getActiveSubscriptions(ctx.shopDomain, ctx.accessToken);
+        for (const s of subs) {
+          await cancelSubscription(ctx.shopDomain, ctx.accessToken, s.id);
+        }
+      } catch (err) {
+        console.warn('[billing] downgrade cancel failed:', (err as Error).message);
+      }
+      await setPlan(ctx.shopId, 'free');
+      res.redirect(`/?shop=${ctx.shopDomain}`);
+      return;
     }
     const confirmationUrl = await createSubscription(
       ctx.shopDomain,
       ctx.accessToken,
       plan,
-      `${config.host}/api/billing/callback?shop=${ctx.shopDomain}`,
+      `${config.host}/api/billing/callback?shop=${ctx.shopDomain}&plan=${plan}`,
     );
     res.redirect(302, confirmationUrl);
   } catch (err) {
@@ -127,9 +242,37 @@ api.get('/billing/start', async (req, res, next) => {
   }
 });
 
+/** Explicit downgrade to Free (cancels the Shopify subscription). */
+api.post('/billing/downgrade', async (req, res, next) => {
+  try {
+    const ctx = reqCtx(req);
+    if (!ctx.accessToken || config.mockShopify) {
+      await setPlan(ctx.shopId, 'free');
+      res.json({ ok: true, plan: 'free' });
+      return;
+    }
+    try {
+      const subs = await getActiveSubscriptions(ctx.shopDomain, ctx.accessToken);
+      for (const s of subs) {
+        await cancelSubscription(ctx.shopDomain, ctx.accessToken, s.id);
+      }
+    } catch (err) {
+      console.warn('[billing] downgrade cancel failed:', (err as Error).message);
+    }
+    await setPlan(ctx.shopId, 'free');
+    res.json({ ok: true, plan: 'free' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 api.get('/billing/callback', async (req, res) => {
-  // Shopify redirects here after the merchant approves/declines.
-  const shop = req.query.shop ?? '';
+  // Shopify redirects here (top-level) after the merchant approves/declines.
+  // Plan reconciliation happens on the next authenticated API call via
+  // requireBilling -> currentPlan, so this just bounces back into the app.
+  // (Never trust the ?plan= param here — a declined checkout must not grant
+  // paid features.)
+  const shop = String(req.query.shop ?? '');
   res.redirect(`/?shop=${shop}`);
 });
 
@@ -214,12 +357,12 @@ api.delete('/suppliers/:id', async (req, res, next) => {
   }
 });
 
-api.post('/suppliers/:id/skus', async (req, res, next) => {
+api.post('/suppliers/:id/skus', requireSkuForBody('inventoryItemId'), async (req, res, next) => {
   try {
     const { inventoryItemId, sku, variantTitle, unitCost } = req.body ?? {};
     if (!inventoryItemId || !sku) throw badRequest('inventoryItemId and sku are required.');
     res.status(201).json(
-      await addSupplierSku(reqCtx(req), req.params.id, {
+      await addSupplierSku(reqCtx(req), String(req.params.id), {
         inventoryItemId: String(inventoryItemId),
         sku: String(sku),
         variantTitle: variantTitle ? String(variantTitle) : undefined,
@@ -271,10 +414,14 @@ api.get('/thresholds', async (req, res, next) => {
   }
 });
 
-api.post('/thresholds', async (req, res, next) => {
-  try {
-    const { inventoryItemId, productTitle, variantTitle, sku, locationId, locationName, minQty } =
-      req.body ?? {};
+api.post(
+  '/thresholds',
+  requireFeaturePlan('alerts'),
+  requireSkuForBody('inventoryItemId'),
+  async (req, res, next) => {
+    try {
+      const { inventoryItemId, productTitle, variantTitle, sku, locationId, locationName, minQty } =
+        req.body ?? {};
     if (!inventoryItemId || !productTitle) throw badRequest('inventoryItemId and productTitle are required.');
     if (!Number.isInteger(minQty) || minQty < 0) throw badRequest('minQty must be a non-negative integer.');
     const ctx = reqCtx(req);
@@ -304,7 +451,8 @@ api.post('/thresholds', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+  },
+);
 
 api.put('/thresholds/:id', async (req, res, next) => {
   try {
@@ -335,7 +483,7 @@ api.delete('/thresholds/:id', async (req, res, next) => {
   }
 });
 
-api.get('/low-stock', async (req, res, next) => {
+api.get('/low-stock', requireFeaturePlan('alerts'), async (req, res, next) => {
   try {
     res.json(await evaluateLowStock(reqCtx(req)));
   } catch (err) {
@@ -343,7 +491,7 @@ api.get('/low-stock', async (req, res, next) => {
   }
 });
 
-api.post('/alerts/check-now', async (req, res, next) => {
+api.post('/alerts/check-now', requireFeaturePlan('alerts'), async (req, res, next) => {
   try {
     const low = await evaluateLowStock(reqCtx(req));
     res.json({ count: low.length, items: low });
@@ -391,9 +539,9 @@ api.get('/purchase-orders/:id', async (req, res, next) => {
   }
 });
 
-api.post('/purchase-orders/:id/send', async (req, res, next) => {
+api.post('/purchase-orders/:id/send', requireFeaturePlan('pdf'), async (req, res, next) => {
   try {
-    res.json(await sendPurchaseOrder(reqCtx(req), req.params.id));
+    res.json(await sendPurchaseOrder(reqCtx(req), String(req.params.id)));
   } catch (err) {
     next(err);
   }
@@ -418,9 +566,9 @@ api.post('/purchase-orders/:id/cancel', async (req, res, next) => {
   }
 });
 
-api.get('/purchase-orders/:id/pdf', async (req, res, next) => {
+api.get('/purchase-orders/:id/pdf', requireFeaturePlan('pdf'), async (req, res, next) => {
   try {
-    const { filename, buffer } = await purchaseOrderPdf(reqCtx(req), req.params.id);
+    const { filename, buffer } = await purchaseOrderPdf(reqCtx(req), String(req.params.id));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
@@ -440,7 +588,7 @@ api.get('/transfers', async (req, res, next) => {
   }
 });
 
-api.post('/transfers', async (req, res, next) => {
+api.post('/transfers', requireFeaturePlan('transfers'), async (req, res, next) => {
   try {
     const { fromLocationId, toLocationId, notes, lines } = req.body ?? {};
     if (!fromLocationId || !toLocationId) throw badRequest('fromLocationId and toLocationId are required.');

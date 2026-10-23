@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Plan &amp; billing — Agent Catalog Fixer{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Plan &amp; billing</h1>
+  <p class="muted">Current plan: <strong>{{ plan }}</strong>{% if subscription_status %} — Shopify subscription status: {{ subscription_status }}{% endif %}{% if trial_ends_at %} — trial ends {{ trial_ends_at.strftime('%Y-%m-%d') }}{% endif %}</p>
+  <p class="muted">{% if mock_mode %}Dev/mock mode: plan changes are recorded directly, no Shopify charge.{% else %}Paid plans are billed by Shopify as recurring app charges (every 30 days). You can change or cancel at any time.{% endif %}</p>
+  {% if msg == 'subscription-active' %}
+  <p><strong>Your subscription is active. Thank you!</strong></p>
+  {% elif msg == 'downgraded' %}
+  <p><strong>Switched to the Free plan.</strong></p>
+  {% elif msg == 'cancelled' %}
+  <p><strong>Subscription cancelled. You're now on the Free plan.</strong></p>
+  {% elif msg == 'plan-updated' %}
+  <p><strong>Plan updated.</strong></p>
+  {% elif msg == 'sync-failed' %}
+  <p><strong>We couldn't confirm your subscription with Shopify. Please try again.</strong></p>
+  {% endif %}
+</div>
+
+{% set shop_qs = request.query_params.get('shop', '') %}
+{% set qs = ('?shop=' ~ shop_qs) if shop_qs else '' %}
+<div class="card">
+  <div class="stats">
+  {% for p in plans %}
+    <div class="stat card" style="margin-bottom: 0;{% if p.current %} border: 2px solid #1a1a1a;{% endif %}">
+      <h2>{{ p.name }}{% if p.current %} <span class="pill active">current plan</span>{% endif %}</h2>
+      <p class="num" style="font-size: 24px;">{% if p.price_cents %}${{ p.price_cents // 100 }}<span class="muted" style="font-size: 13px;">/month</span>{% else %}Free{% endif %}</p>
+      {% if p.trial_days %}<p class="muted">{{ p.trial_days }}-day free trial</p>{% endif %}
+      <ul style="font-size: 14px; padding-left: 20px;">
+      {% for f in p.features %}
+        <li>{{ f }}</li>
+      {% endfor %}
+      </ul>
+      {% if not p.current %}
+        {% if p.price_cents == 0 %}
+        <form method="post" action="/app/billing/subscribe{{ qs }}">
+          <input type="hidden" name="plan" value="{{ p.id }}">
+          <button type="submit" class="secondary">Downgrade to {{ p.name }}</button>
+        </form>
+        {% else %}
+        <form method="post" action="/app/billing/subscribe{{ qs }}">
+          <input type="hidden" name="plan" value="{{ p.id }}">
+          <button type="submit">Upgrade to {{ p.name }}{% if not mock_mode %} via Shopify{% endif %}</button>
+        </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</div>
+
+{% if subscription_status in ['ACTIVE', 'TRIALING'] %}
+<div class="card">
+  <h2>Cancel subscription</h2>
+  <p class="muted">Cancelling drops you to the Free plan immediately.</p>
+  <form method="post" action="/app/billing/cancel{{ qs }}" onsubmit="return confirm('Cancel your subscription and switch to the Free plan?');">
+    <button type="submit" class="secondary">Cancel subscription</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

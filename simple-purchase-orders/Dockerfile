@@ -16,6 +16,7 @@ COPY tsconfig.json ./
 COPY prisma ./prisma/
 COPY src ./src
 COPY data ./data
+COPY media ./media
 RUN npx prisma generate
 
 # Compile backend (prisma generate + tsc -> dist/)
@@ -26,4 +27,4 @@ RUN npm prune --omit=dev --no-audit --no-fund
 ENV NODE_ENV=production
 
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma db push && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]

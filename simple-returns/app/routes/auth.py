@@ -9,6 +9,7 @@ GDPR note: token is stored Fernet-encrypted (see models.Shop).
 from __future__ import annotations
 
 import urllib.parse
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -38,7 +39,7 @@ async def auth_start(shop: str, settings: Settings = Depends(get_settings)):
     state = security.new_oauth_state(settings)
     params = {
         "client_id": settings.shopify_api_key,
-        "scope": settings.oauth_scopes,
+        "scope": ",".join(settings.oauth_scopes),
         "redirect_uri": f"{settings.app_url}/auth/callback",
         "state": state,
     }
@@ -71,12 +72,28 @@ async def auth_callback(
                     "client_id": settings.shopify_api_key,
                     "client_secret": settings.shopify_api_secret,
                     "code": code,
+                    # Shopify rejects non-expiring offline tokens for the
+                    # Admin API; request an expiring token + refresh token.
+                    "expiring": 1,
                 },
             )
             resp.raise_for_status()
-            token = resp.json()["access_token"]
+            token_payload = resp.json()
+            token = token_payload["access_token"]
+            refresh_token = token_payload.get("refresh_token")
+            expires_in = token_payload.get("expires_in")
+            granted_scopes = token_payload.get("scope", "")
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             raise HTTPException(502, f"Token exchange failed: {exc}") from exc
+
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+        if expires_in
+        else None
+    )
+    refresh_token_enc = (
+        security.encrypt_token(refresh_token, settings) if refresh_token else None
+    )
 
     shop = db.query(Shop).filter_by(shop_domain=shop_domain).one_or_none()
     if shop is None:
@@ -85,6 +102,9 @@ async def auth_callback(
         shop = Shop(
             shop_domain=shop_domain,
             access_token_enc=security.encrypt_token(token, settings),
+            refresh_token_enc=refresh_token_enc,
+            access_token_expires_at=expires_at,
+            scopes=granted_scopes,
             plan=Plan(settings.resolved_default_plan),
             settings={"brand_name": shop_domain.split(".")[0].replace("-", " ").title()},
         )
@@ -106,6 +126,10 @@ async def auth_callback(
         )
     else:
         shop.access_token_enc = security.encrypt_token(token, settings)
+        shop.refresh_token_enc = refresh_token_enc
+        shop.access_token_expires_at = expires_at
+        if granted_scopes:
+            shop.scopes = granted_scopes
         shop.uninstalled_at = None
     db.commit()
 
@@ -117,4 +141,17 @@ async def auth_callback(
     except Exception:  # noqa: BLE001 - install must succeed regardless
         pass
 
-    return RedirectResponse(f"https://{shop_domain}/admin/apps/{settings.shopify_api_key}", status_code=302)
+    resp = RedirectResponse(
+        f"https://{shop_domain}/admin/apps/{settings.shopify_api_key}",
+        status_code=302,
+    )
+    # Plant the session cookie NOW (this response is served from the app
+    # domain, so the cookie sticks). Otherwise the first embedded load
+    # depends entirely on signed launch params and can bounce into an
+    # OAuth chain inside the iframe, which Shopify refuses to frame.
+    resp.set_cookie(
+        "sr_session",
+        security.sign_session_cookie(shop_domain, settings),
+        max_age=86400, httponly=True, secure=True, samesite="none",
+    )
+    return resp

@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import Base, engine
-from .deps import get_db
-from .routes import admin, auth, portal, webhooks
+from .deps import AuthBounce, get_db
+from .routes import admin, auth, billing, portal, webhooks
 
 _MYSHOPIFY_ORIGIN = re.compile(r"^https://[a-z0-9][a-z0-9-]*\.myshopify\.com$")
 
@@ -40,6 +40,30 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Simple Returns & Exchanges", lifespan=lifespan)
+
+    @app.exception_handler(AuthBounce)
+    async def _auth_bounce(request, exc):  # noqa: ANN001, ANN202
+        # Exit-iframe page: restart OAuth at the TOP level. A 302 chain
+        # issued inside the admin iframe lands on Shopify's OAuth page,
+        # which refuses framing, or loops through the callback.
+        from urllib.parse import quote as _q
+
+        auth_url = f"/auth?shop={_q(exc.shop_domain)}"
+        if exc.host:
+            auth_url += f"&host={_q(exc.host)}"
+        page = (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<title>Opening app</title></head><body>"
+            "<p style='font-family:system-ui,sans-serif'>Opening the app&hellip; "
+            f'<a href="{auth_url}" target="_top">Continue</a></p>'
+            "<script>"
+            f"var target={__import__('json').dumps(auth_url)};"
+            "function go(){try{window.top.location.href=target;}"
+            "catch(e){window.location.href=target;}}"
+            "go();setTimeout(go,1500);"
+            "</script></body></html>"
+        )
+        return HTMLResponse(page, status_code=200)
 
     @app.middleware("http")
     async def portal_cors(request: Request, call_next):
@@ -74,6 +98,37 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"ok": True}
+
+    @app.get("/media/screencast.mp4")
+    async def screencast():
+        from pathlib import Path
+        from fastapi.responses import FileResponse
+        f = Path(__file__).parent / "static" / "screencast.mp4"
+        return FileResponse(f, media_type="video/mp4")
+
+    @app.get("/media/proof-fix.png")
+    async def proof_fix():
+        # Static screenshot used as the "proof of resolution" link for the
+        # App Store review items (shows the app rendering/working after
+        # the review fixes).
+        from pathlib import Path
+        from fastapi.responses import FileResponse
+        f = Path(__file__).parent / "static" / "proof-fix.png"
+        return FileResponse(f, media_type="image/png")
+
+    @app.get("/privacy", response_class=HTMLResponse)
+    async def privacy():
+        # Public page for the Shopify App Store listing. No auth required.
+        from .privacy import PRIVACY_HTML
+
+        return PRIVACY_HTML
+
+    @app.get("/")
+    async def root(request: Request):
+        # Shopify loads the App URL in an iframe; redirect to the admin UI,
+        # preserving query params (shop, host, etc.).
+        qs = str(request.url.query)
+        return RedirectResponse(f"/app?{qs}" if qs else "/app", status_code=302)
 
     # Dev login: mock mode only. Creates a demo shop and drops you in the app.
     if settings.use_mock_shopify:
@@ -112,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(webhooks.router)
     app.include_router(admin.router)
+    app.include_router(billing.router)
     app.include_router(portal.router)
 
     return app

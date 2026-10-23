@@ -3,26 +3,61 @@
 {% block content %}
 <h1>Billing</h1>
 {% set shop_qs = request.query_params.get('shop', '') %}
+{% set qs = ('?shop=' ~ shop_qs) if shop_qs else '' %}
+
+{% if msg == 'subscription-active' %}
+<p class="flash ok">Your subscription is active. Thank you!</p>
+{% elif msg == 'downgraded' %}
+<p class="flash ok">Switched to the Free plan.</p>
+{% elif msg == 'cancelled' %}
+<p class="flash ok">Subscription cancelled. You're now on the Free plan.</p>
+{% elif msg == 'plan-updated' %}
+<p class="flash ok">Plan updated.</p>
+{% elif msg == 'sync-failed' %}
+<p class="flash err">We couldn't confirm your subscription with Shopify. Please try again.</p>
+{% endif %}
+
+<p>Usage in {{ month }}: <strong>{{ used }}</strong> returns
+{% if limit %} of {{ limit }} included{% endif %}.</p>
+{% if subscription_status %}
+<p class="muted">Shopify subscription status: {{ subscription_status }}</p>
+{% endif %}
 
 <div class="grid2">
 {% for p in plans %}
 <div class="card {% if p.current %}current{% endif %}">
   <h2>{{ p.name }} {% if p.current %}<span class="chip active">current</span>{% endif %}</h2>
-  <p class="price">${{ p.price_cents // 100 }}<span class="muted">/month</span></p>
+  <p class="price">{% if p.price_cents %}${{ p.price_cents // 100 }}<span class="muted">/month</span>{% else %}Free{% endif %}</p>
   <p>{% if p.monthly_returns %}{{ p.monthly_returns }} returns/month{% else %}Unlimited returns{% endif %}</p>
+  {% if p.trial_days %}<p class="muted">{{ p.trial_days }}-day free trial</p>{% endif %}
+  <ul>
+  {% for f in p.features %}
+    <li>{{ f }}</li>
+  {% endfor %}
+  </ul>
   {% if not p.current %}
-  <form method="post" action="/app/billing/plan{% if shop_qs %}?shop={{ shop_qs }}{% endif %}">
-    <input type="hidden" name="plan" value="{{ p.id }}">
-    <button type="submit" class="btn">Switch to {{ p.name }}</button>
-  </form>
+    {% if p.price_cents == 0 %}
+    <form method="post" action="/app/billing/subscribe{{ qs }}">
+      <input type="hidden" name="plan" value="{{ p.id }}">
+      <button type="submit" class="btn">Downgrade to {{ p.name }}</button>
+    </form>
+    {% else %}
+    <form method="post" action="/app/billing/subscribe{{ qs }}">
+      <input type="hidden" name="plan" value="{{ p.id }}">
+      <button type="submit" class="btn">Switch to {{ p.name }}{% if not mock_mode %} via Shopify{% endif %}</button>
+    </form>
+    {% endif %}
   {% endif %}
 </div>
 {% endfor %}
 </div>
 
-<p>Usage in {{ month }}: <strong>{{ used }}</strong> returns
-{% if limit %} of {{ limit }} included{% endif %}.</p>
+{% if not mock_mode and subscription_status in ['ACTIVE', 'TRIALING'] %}
+<form method="post" action="/app/billing/cancel{{ qs }}" onsubmit="return confirm('Cancel your subscription and switch to the Free plan?');">
+  <button type="submit" class="btn danger">Cancel subscription</button>
+</form>
+{% endif %}
 
-<p class="muted">Note: this build records the plan directly. The production build bills
-through Shopify's Billing API (recurring app subscriptions) — see BUILD_NOTES.md.</p>
+<p class="muted">Paid plans are billed by Shopify as recurring app charges
+(Every 30 days). You can change or cancel at any time.</p>
 {% endblock %}

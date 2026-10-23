@@ -19,7 +19,7 @@ from ..deps import (
     shipping_provider,
     shopify_client,
 )
-from ..models import PLAN_LIMITS, Plan, ReturnRequest, ReturnRule, ReturnStatus, Shop
+from ..models import PLAN_LIMITS, ReturnRequest, ReturnRule, ReturnStatus, Shop
 from ..services import ReturnService
 
 router = APIRouter()
@@ -267,56 +267,4 @@ async def settings_rule_delete(
     url = "/app/settings?msg=rule-deleted"
     if request.query_params.get("shop"):
         url += f"&shop={request.query_params['shop']}"
-    return RedirectResponse(url, status_code=303)
-
-
-@router.get("/app/billing", response_class=HTMLResponse)
-async def billing_page(
-    request: Request,
-    shop: Shop = Depends(get_current_shop),
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings_dep),
-):
-    from datetime import datetime, timezone
-
-    from ..models import PlanUsage
-
-    month = f"{datetime.now(timezone.utc).year:04d}-{datetime.now(timezone.utc).month:02d}"
-    usage = db.query(PlanUsage).filter_by(shop_id=shop.id, month=month).one_or_none()
-    used = usage.returns_count if usage else 0
-    plans = [
-        {
-            "id": plan.value,
-            "name": plan.value.title(),
-            "price_cents": info["price_cents"],
-            "monthly_returns": info["monthly_returns"],
-            "current": shop.plan == plan,
-        }
-        for plan, info in PLAN_LIMITS.items()
-    ]
-    limit = PLAN_LIMITS[shop.plan]["monthly_returns"]
-    return templates.TemplateResponse(
-        request,
-        "billing.html",
-        _ctx(request, shop, settings, plans=plans, used=used, month=month, limit=limit),
-    )
-
-
-@router.post("/app/billing/plan")
-async def billing_change_plan(
-    request: Request,
-    plan: str = Form("starter"),
-    shop: Shop = Depends(get_current_shop),
-    db: Session = Depends(get_db),
-):
-    # NOTE: v1 changes the plan record directly (demo/dev). Before app-store
-    # submission this must be replaced with Shopify Billing API subscriptions.
-    try:
-        shop.plan = Plan(plan)
-    except ValueError:
-        raise HTTPException(400, "Unknown plan")
-    db.commit()
-    url = "/app/billing"
-    if request.query_params.get("shop"):
-        url += f"?shop={request.query_params['shop']}"
     return RedirectResponse(url, status_code=303)

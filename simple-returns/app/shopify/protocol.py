@@ -79,6 +79,15 @@ class DraftOrder:
     invoice_url: str | None = None
 
 
+@dataclass
+class AppSubscription:
+    id: str                 # gid://shopify/AppSubscription/...
+    name: str               # e.g. "Simple Returns Starter"
+    status: str             # ACTIVE, CANCELLED, EXPIRED, FROZEN, DECLINED, PENDING...
+    trial_days: int = 0
+    current_period_end: str | None = None
+
+
 class ShopifyError(Exception):
     """Raised when a Shopify API call fails (transport or userErrors)."""
 
@@ -162,4 +171,35 @@ class ShopifyClientProtocol(Protocol):
         self, shop_domain: str, product_id: str
     ) -> list[VariantOption]:
         """List sellable variants for a product (for exchange selection)."""
+        ...
+
+    # -- billing (Shopify Billing API) -----------------------------------
+
+    async def get_active_app_subscriptions(
+        self, shop_domain: str
+    ) -> list[AppSubscription]:
+        """List the shop's active app subscriptions (usually 0 or 1)."""
+        ...
+
+    async def create_app_subscription(
+        self,
+        shop_domain: str,
+        name: str,
+        price_cents: int,
+        currency: str,
+        trial_days: int,
+        return_url: str,
+        test: bool = True,
+    ) -> tuple[str, str]:
+        """Create a recurring app subscription via `appSubscriptionCreate`.
+
+        Returns (subscription_id, confirmation_url). The merchant must visit
+        the confirmation URL to approve; Shopify redirects back to return_url.
+        """
+        ...
+
+    async def cancel_app_subscription(
+        self, shop_domain: str, subscription_id: str
+    ) -> bool:
+        """Cancel via `appSubscriptionCancel`. Returns True on success."""
         ...

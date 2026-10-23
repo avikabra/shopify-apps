@@ -8,7 +8,7 @@ Implements ShopifyClientProtocol over httpx. All calls:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
@@ -30,6 +30,41 @@ from .protocol import (
 )
 
 
+def _refresh_access_token(shop: Shop, db, settings) -> None:
+    """Exchange the shop's refresh token for a fresh access token.
+
+    Shopify rotates both tokens on every refresh: persist the new pair
+    (and the new expiry) in the same write, or the next refresh fails.
+    """
+    refresh_token = security.decrypt_token(shop.refresh_token_enc, settings)
+    with httpx.Client(timeout=20) as http:
+        resp = http.post(
+            f"https://{shop.shop_domain}/admin/oauth/access_token",
+            json={
+                "client_id": settings.shopify_api_key,
+                "client_secret": settings.shopify_api_secret,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+        )
+    try:
+        resp.raise_for_status()
+        payload = resp.json()
+        new_token = payload["access_token"]
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise ShopifyError(f"Could not refresh access token: {exc}") from exc
+    shop.access_token_enc = security.encrypt_token(new_token, settings)
+    if payload.get("refresh_token"):
+        shop.refresh_token_enc = security.encrypt_token(
+            payload["refresh_token"], settings
+        )
+    if payload.get("expires_in"):
+        shop.access_token_expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=int(payload["expires_in"])
+        )
+    db.commit()
+
+
 def _access_token(shop_domain: str) -> str:
     settings = get_settings()
     db = SessionLocal()
@@ -37,6 +72,14 @@ def _access_token(shop_domain: str) -> str:
         shop = db.query(Shop).filter_by(shop_domain=shop_domain).one_or_none()
         if not shop or shop.uninstalled_at:
             raise ShopifyError(f"Unknown or uninstalled shop: {shop_domain}")
+        # Expiring offline tokens live ~1h. Refresh a little early so a
+        # long operation never starts on a token that dies mid-flight.
+        if shop.refresh_token_enc and shop.access_token_expires_at is not None:
+            expires_at = shop.access_token_expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at - datetime.now(timezone.utc) < timedelta(minutes=5):
+                _refresh_access_token(shop, db, settings)
         return security.decrypt_token(shop.access_token_enc, settings)
     finally:
         db.close()
@@ -333,6 +376,78 @@ class ShopifyGraphQLClient:
                 )
             )
         return variants
+
+    # -- billing (Shopify Billing API) -----------------------------------
+
+    async def get_active_app_subscriptions(
+        self, shop_domain: str
+    ) -> list[AppSubscription]:
+        from .protocol import AppSubscription
+
+        payload = await self._call(
+            shop_domain,
+            queries.GET_ACTIVE_SUBSCRIPTIONS,
+            {},
+            "currentAppInstallation",
+        )
+        subs = []
+        for node in payload.get("activeSubscriptions") or []:
+            subs.append(
+                AppSubscription(
+                    id=node["id"],
+                    name=node.get("name") or "",
+                    status=node.get("status") or "",
+                    trial_days=node.get("trialDays") or 0,
+                    current_period_end=node.get("currentPeriodEnd"),
+                )
+            )
+        return subs
+
+    async def create_app_subscription(
+        self,
+        shop_domain: str,
+        name: str,
+        price_cents: int,
+        currency: str,
+        trial_days: int,
+        return_url: str,
+        test: bool = True,
+    ) -> tuple[str, str]:
+        amount = f"{price_cents / 100:.2f}"
+        payload = await self._call(
+            shop_domain,
+            queries.APP_SUBSCRIPTION_CREATE,
+            {
+                "name": name,
+                "returnUrl": return_url,
+                "test": test,
+                "trialDays": trial_days,
+                "lineItems": [
+                    {
+                        "plan": {
+                            "appRecurringPricingDetails": {
+                                "price": {"amount": amount, "currencyCode": currency},
+                                "interval": "EVERY_30_DAYS",
+                            }
+                        }
+                    }
+                ],
+            },
+            "appSubscriptionCreate",
+        )
+        sub = payload["appSubscription"]
+        return sub["id"], payload["confirmationUrl"]
+
+    async def cancel_app_subscription(
+        self, shop_domain: str, subscription_id: str
+    ) -> bool:
+        await self._call(
+            shop_domain,
+            queries.APP_SUBSCRIPTION_CANCEL,
+            {"id": subscription_id, "prorate": True},
+            "appSubscriptionCancel",
+        )
+        return True
 
     @staticmethod
     def new_idempotency_key() -> str:

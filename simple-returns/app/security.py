@@ -83,3 +83,34 @@ def verify_oauth_state(state: str, settings) -> bool:
     except ValueError:
         return False
     return 0 <= age <= _STATE_TTL_SECONDS
+
+
+_SESSION_COOKIE_TTL_SECONDS = 86400  # 24h
+
+
+def sign_session_cookie(shop_domain: str, settings) -> str:
+    """Create a signed session cookie value binding a shop domain."""
+    raw = f"{int(time.time())}:{shop_domain}"
+    sig = hmac.new(
+        settings.shopify_api_secret.encode(), raw.encode(), hashlib.sha256
+    ).hexdigest()
+    return base64.urlsafe_b64encode(f"{raw}:{sig}".encode()).decode()
+
+
+def verify_session_cookie(value: str, settings):
+    """Return the shop domain iff the session cookie is authentic and fresh."""
+    try:
+        decoded = base64.urlsafe_b64decode(value.encode()).decode()
+        ts, domain, sig = decoded.split(":", 2)
+        expected = hmac.new(
+            settings.shopify_api_secret.encode(),
+            f"{ts}:{domain}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return None
+        if time.time() - int(ts) > _SESSION_COOKIE_TTL_SECONDS:
+            return None
+        return domain or None
+    except Exception:
+        return None

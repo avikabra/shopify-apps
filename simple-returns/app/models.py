@@ -38,14 +38,20 @@ def _utcnow() -> datetime:
 
 
 class Plan(str, enum.Enum):
+    FREE = "free"  # $0/mo, 10 returns/mo
     STARTER = "starter"  # $12/mo, 50 returns/mo
     GROWTH = "growth"  # $24/mo, unlimited
 
 
 PLAN_LIMITS = {
+    Plan.FREE: {"price_cents": 0, "monthly_returns": 10},
     Plan.STARTER: {"price_cents": 1200, "monthly_returns": 50},
     Plan.GROWTH: {"price_cents": 2400, "monthly_returns": None},  # None = unlimited
 }
+
+
+# Shopify AppSubscription statuses we treat as "billing is live".
+ACTIVE_SUBSCRIPTION_STATUSES = {"ACTIVE", "TRIALING"}
 
 
 class ReturnStatus(str, enum.Enum):
@@ -72,9 +78,20 @@ class Shop(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     shop_domain: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     access_token_enc: Mapped[bytes] = mapped_column(LargeBinary)  # Fernet-encrypted
+    # Expiring offline tokens: Shopify rejects non-expiring tokens for the
+    # Admin API, so installs request expiring tokens (1h) plus a refresh
+    # token (90d, rotates on use), both stored alongside the access token.
+    refresh_token_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     scopes: Mapped[str] = mapped_column(String(1024), default="")
-    plan: Mapped[Plan] = mapped_column(Enum(Plan), default=Plan.STARTER)
+    plan: Mapped[Plan] = mapped_column(Enum(Plan), default=Plan.FREE)
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Shopify Billing API: the active AppSubscription GID and its status.
+    # Set when the merchant approves a subscription; cleared on downgrade
+    # to Free. Synced via the app_subscriptions/update webhook and the
+    # /app/billing/callback return URL.
+    app_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subscription_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     installed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     uninstalled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

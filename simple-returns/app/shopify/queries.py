@@ -155,3 +155,55 @@ query GetProductVariants($id: ID!) {
   }
 }
 """
+
+# -- Shopify Billing API (recurring app subscriptions) --------------------
+
+GET_ACTIVE_SUBSCRIPTIONS = """
+query GetActiveSubscriptions {
+  currentAppInstallation {
+    activeSubscriptions {
+      id
+      name
+      status
+      trialDays
+      currentPeriodEnd
+    }
+  }
+}
+"""
+
+APP_SUBSCRIPTION_CREATE = """
+mutation AppSubscriptionCreate(
+  $name: String!
+  $returnUrl: URL!
+  $test: Boolean
+  $trialDays: Int
+  $lineItems: [AppSubscriptionLineItemInput!]!
+) {
+  appSubscriptionCreate(
+    name: $name
+    returnUrl: $returnUrl
+    test: $test
+    trialDays: $trialDays
+    lineItems: $lineItems
+  ) {
+    appSubscription {
+      id
+      name
+      status
+      trialDays
+    }
+    confirmationUrl
+    userErrors { field message }
+  }
+}
+"""
+
+APP_SUBSCRIPTION_CANCEL = """
+mutation AppSubscriptionCancel($id: ID!, $prorate: Boolean) {
+  appSubscriptionCancel(id: $id, prorate: $prorate) {
+    appSubscription { id status }
+    userErrors { field message }
+  }
+}
+"""

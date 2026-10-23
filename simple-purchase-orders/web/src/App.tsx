@@ -16,6 +16,7 @@ import PurchaseOrderDetail from './pages/PurchaseOrderDetail';
 import Suppliers from './pages/Suppliers';
 import Transfers from './pages/Transfers';
 import StockAlerts from './pages/StockAlerts';
+import Billing from './pages/Billing';
 
 /**
  * Lets Polaris components (e.g. Navigation items) navigate client-side so the
@@ -57,6 +58,11 @@ function Nav() {
             url: '/suppliers',
             selected: location.pathname.startsWith('/suppliers'),
           },
+          {
+            label: 'Billing',
+            url: '/billing',
+            selected: location.pathname.startsWith('/billing'),
+          },
         ]}
       />
     </Navigation>
@@ -76,6 +82,7 @@ function Shell() {
             <Route path="/transfers" element={<Transfers />} />
             <Route path="/stock-alerts" element={<StockAlerts />} />
             <Route path="/suppliers" element={<Suppliers />} />
+            <Route path="/billing" element={<Billing />} />
           </Routes>
         </Frame>
       </BrowserRouter>

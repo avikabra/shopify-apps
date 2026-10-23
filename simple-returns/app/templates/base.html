@@ -6,17 +6,38 @@
 <title>{% block title %}Simple Returns{% endblock %}</title>
 <link rel="stylesheet" href="/static/admin.css">
 {% if api_key %}
+<meta name="shopify-api-key" content="{{ api_key }}">
 <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 <script>
-  // App Bridge (embedded app). In dev/mock mode api_key is empty and this is a no-op.
-  if (window['app-bridge']) {
-    const params = new URLSearchParams(window.location.search);
-    window.shopify = window['app-bridge'].createApp({
-      apiKey: '{{ api_key }}',
-      host: params.get('host') || '',
-      forceRedirect: true,
-    });
-  }
+  // App Bridge v4 (loaded from Shopify's CDN above, initialized via the
+  // shopify-api-key meta tag). Keep in-app navigation authenticated with a
+  // session token: fetch an id token and attach it to admin links, form
+  // actions, and fetch() calls so the backend can verify it on every request.
+  document.addEventListener('DOMContentLoaded', async function () {
+    try {
+      if (!window.shopify || !window.shopify.idToken) return;
+      const token = await window.shopify.idToken();
+      if (!token) return;
+      document.querySelectorAll('a[href^="/app"]').forEach(function (a) {
+        const u = new URL(a.href, window.location.origin);
+        u.searchParams.set('id_token', token);
+        a.href = u.toString();
+      });
+      document.querySelectorAll('form[action^="/app"]').forEach(function (f) {
+        const u = new URL(f.action, window.location.origin);
+        u.searchParams.set('id_token', token);
+        f.action = u.toString();
+      });
+      const origFetch = window.fetch;
+      window.fetch = function (input, init) {
+        init = init || {};
+        const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+        headers.set('Authorization', 'Bearer ' + token);
+        init.headers = headers;
+        return origFetch(input, init);
+      };
+    } catch (e) { /* not embedded or App Bridge unavailable */ }
+  });
 </script>
 {% endif %}
 </head>

@@ -10,7 +10,13 @@ export function startDigestScheduler() {
   cron.schedule('7 * * * *', async () => {
     const hour = new Date().getUTCHours();
     const shops = await prisma.shop.findMany({
-      where: { digestEnabled: true, digestHourUtc: hour, uninstalledAt: null },
+      // Daily digests are a Starter+ feature; free shops never get them.
+      where: {
+        digestEnabled: true,
+        digestHourUtc: hour,
+        uninstalledAt: null,
+        plan: { in: ['starter', 'growth'] },
+      },
       select: { id: true },
     });
     for (const s of shops) {

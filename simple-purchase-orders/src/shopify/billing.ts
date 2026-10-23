@@ -1,26 +1,55 @@
 import { config } from '../config.js';
 import { graphqlAdmin } from './client.js';
+import { prisma } from '../db.js';
+import {
+  PLANS,
+  normalizePlan,
+  planFromSubscriptionName,
+  type PlanKey,
+} from '../lib/plans.js';
 
 // NOTE: the AppSubscription* input shapes below follow the Admin GraphQL API
 // as documented for 2025-10. Verify against a real dev store before release
 // (see BUILD_NOTES.md).
 
-export const PLANS = {
-  starter: { key: 'starter', name: 'Starter', price: 9, trialDays: 14 },
-  growth: { key: 'growth', name: 'Growth', price: 19, trialDays: 14 },
-} as const;
-
-export type PlanKey = keyof typeof PLANS;
+// Re-export the plan catalog for existing importers.
+export { PLANS };
+export type { PlanKey };
 
 const ACTIVE_SUBSCRIPTIONS_QUERY = `
   query ActiveSubscriptions {
     app {
       installation {
-        activeSubscriptions { id name status }
+        activeSubscriptions { id name status trialDays }
       }
     }
   }
 `;
+
+export interface ActiveSubscription {
+  id: string;
+  name: string;
+  status: string;
+  trialDays: number | null;
+}
+
+/** All ACTIVE app subscriptions for the shop (usually 0 or 1). */
+export async function getActiveSubscriptions(
+  shop: string,
+  accessToken: string,
+): Promise<ActiveSubscription[]> {
+  const data = await graphqlAdmin<{
+    app: { installation: { activeSubscriptions: ActiveSubscription[] } };
+  }>(shop, accessToken, ACTIVE_SUBSCRIPTIONS_QUERY);
+  return data.app.installation.activeSubscriptions.filter((s) => s.status === 'ACTIVE');
+}
+
+export async function hasActiveSubscription(
+  shop: string,
+  accessToken: string,
+): Promise<boolean> {
+  return (await getActiveSubscriptions(shop, accessToken)).length > 0;
+}
 
 const CREATE_SUBSCRIPTION_MUTATION = `
   mutation CreateSubscription(
@@ -41,22 +70,15 @@ const CREATE_SUBSCRIPTION_MUTATION = `
   }
 `;
 
-export async function hasActiveSubscription(
-  shop: string,
-  accessToken: string,
-): Promise<boolean> {
-  const data = await graphqlAdmin<{
-    app: { installation: { activeSubscriptions: { status: string }[] } };
-  }>(shop, accessToken, ACTIVE_SUBSCRIPTIONS_QUERY);
-  return data.app.installation.activeSubscriptions.some(
-    (s) => s.status === 'ACTIVE',
-  );
-}
-
+/**
+ * Create a paid subscription and return the merchant confirmation URL.
+ * The Free plan has no Shopify charge — handle it by writing the DB plan
+ * directly (see services/billing.js) instead of calling this.
+ */
 export async function createSubscription(
   shop: string,
   accessToken: string,
-  plan: PlanKey,
+  plan: Exclude<PlanKey, 'free'>,
   returnUrl: string,
 ): Promise<string> {
   const p = PLANS[plan];
@@ -90,4 +112,73 @@ export async function createSubscription(
     throw new Error('Billing subscription failed: no confirmation URL returned');
   }
   return payload.confirmationUrl;
+}
+
+const CANCEL_SUBSCRIPTION_MUTATION = `
+  mutation CancelSubscription($id: ID!) {
+    appSubscriptionCancel(id: $id) {
+      userErrors { field message }
+    }
+  }
+`;
+
+/** Cancel a Shopify app subscription (used for downgrades to Free). */
+export async function cancelSubscription(
+  shop: string,
+  accessToken: string,
+  subscriptionId: string,
+): Promise<void> {
+  const data = await graphqlAdmin<{
+    appSubscriptionCancel: { userErrors: { field?: string[] | null; message: string }[] };
+  }>(shop, accessToken, CANCEL_SUBSCRIPTION_MUTATION, { id: subscriptionId });
+  const errors = data.appSubscriptionCancel.userErrors;
+  if (errors?.length) {
+    throw new Error(
+      `Billing cancellation failed: ${errors.map((e) => e.message).join('; ')}`,
+    );
+  }
+}
+
+/**
+ * Reconcile the shop's plan from Shopify's active subscriptions.
+ * Best-effort: never throws — on API failure the stored DB plan stands.
+ * Returns the effective plan key.
+ */
+export async function syncShopPlan(
+  shopId: string,
+  shopDomain: string,
+  accessToken?: string,
+): Promise<PlanKey> {
+  const shop = await prisma.shop.findUnique({ where: { id: shopId } });
+  const stored = normalizePlan(shop?.plan);
+  if (!accessToken || config.mockShopify) return stored;
+  try {
+    const subs = await getActiveSubscriptions(shopDomain, accessToken);
+    const sub = subs[0];
+    if (!sub) {
+      // No active Shopify subscription — fall back to whatever is stored,
+      // but clear a stale subscription id so we don't reference a dead charge.
+      if (shop?.subscriptionId) {
+        await prisma.shop.update({
+          where: { id: shopId },
+          data: { subscriptionId: null, billingStatus: 'CANCELLED', planUpdatedAt: new Date() },
+        });
+      }
+      return stored;
+    }
+    const plan = planFromSubscriptionName(sub.name) ?? stored;
+    await prisma.shop.update({
+      where: { id: shopId },
+      data: {
+        plan,
+        subscriptionId: sub.id,
+        billingStatus: sub.status,
+        planUpdatedAt: new Date(),
+      },
+    });
+    return plan;
+  } catch (err) {
+    console.warn(`[billing] plan sync failed for ${shopDomain}:`, (err as Error).message);
+    return stored;
+  }
 }

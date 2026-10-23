@@ -80,9 +80,11 @@ explicit about what was verified vs. what must be confirmed on a dev store.
 
 ## Known limitations / v1 cuts
 
-- **Billing is a placeholder.** The Billing page records plan changes directly
-  in the DB. Before app-store submission, wire Shopify Billing API recurring
-  subscriptions (`appSubscriptionCreate`) and gate plan changes on them.
+- **Billing is wired to Shopify Billing API.** Recurring app subscriptions
+  (`appSubscriptionCreate`) with freemium plans (Free $0/10 returns,
+  Starter $12/50 returns/14-day trial, Growth $24/unlimited/14-day trial).
+  `app_subscriptions/update` webhook syncs plan changes; Free has no Shopify
+  charge. Mock mode records plans directly (dev convenience).
 - **One draft order per exchange request** (first item only). Multi-item
   exchanges need one draft order with all line items — small follow-up.
 - **No background job queue.** Shopify/EasyPost calls run inline in the

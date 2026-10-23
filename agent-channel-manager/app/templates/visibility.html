@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Visibility — Agent Channel Manager{% endblock %}
+{% block content %}
+<h1>Product visibility</h1>
+<p class="muted">
+  Mode: <strong>{{ shop.channel_mode.value }}</strong> —
+  {% if shop.channel_mode == ChannelMode.BLOCKLIST %}agents see everything except items you hide.
+  {% else %}agents see only items you explicitly show.{% endif %}
+  Change mode on the <a href="/app{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">dashboard</a>.
+</p>
+
+<div class="card">
+  <h2>{% if shop.channel_mode == ChannelMode.BLOCKLIST %}Hide{% else %}Show{% endif %} products / collections</h2>
+  <form method="post" action="/app/visibility{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+    <div class="form-row">
+      <label>Product GIDs (comma-separated)
+        <input type="text" name="subject_gids" size="60" placeholder="gid://shopify/Product/123, gid://shopify/Product/456">
+      </label>
+      <label>Type
+        <select name="subject_type">
+          <option value="product">Product</option>
+          <option value="collection">Collection</option>
+        </select>
+      </label>
+      <label>Action
+        <select name="action">
+          <option value="hide" {% if shop.channel_mode == ChannelMode.BLOCKLIST %}selected{% endif %}>Hide from agents</option>
+          <option value="show" {% if shop.channel_mode == ChannelMode.ALLOWLIST %}selected{% endif %}>Show to agents</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Reason (e.g. low margin, MAP-sensitive)
+        <input type="text" name="reason" size="60">
+      </label>
+      <button class="btn" type="submit">Add rule</button>
+    </div>
+  </form>
+  <p class="muted">
+    {% if limit %}Free plan: {{ rules|length }}/{{ limit }} visibility rules used.{% else %}Pro plan: unlimited rules.{% endif %}
+    Tip: copy GIDs from the product list below.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Active rules ({{ rules|length }})</h2>
+  {% if not rules %}
+  <p class="muted">No visibility rules yet.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Subject</th><th>Type</th><th>Action</th><th>Reason</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rules %}
+      <tr>
+        <td>{{ r.subject_title }}<br><span class="muted">{{ r.subject_gid }}</span></td>
+        <td>{{ r.subject_type }}</td>
+        <td><span class="chip {{ r.action.value }}">{{ r.action.value }}</span></td>
+        <td>{{ r.reason }}</td>
+        <td>
+          <form class="inline-form" method="post" action="/app/visibility/{{ r.id }}/delete{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+            <button class="btn btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Catalog preview</h2>
+  <table>
+    <thead><tr><th>Product</th><th>Storefront price</th><th>Agent sees</th><th>Why</th><th>GID</th></tr></thead>
+    <tbody>
+    {% for p in products %}
+      {% set v = by_gid.get(p.product_id) %}
+      <tr>
+        <td>{{ p.title }}</td>
+        <td>${{ p.price }}</td>
+        <td>{% if v and v.visible %}<span class="ok">visible</span>{% else %}<span class="risk">hidden</span>{% endif %}</td>
+        <td class="muted">{{ v.visibility_reason if v }}</td>
+        <td class="muted">{{ p.product_id }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if collections %}
+  <h3>Collections</h3>
+  <table>
+    <thead><tr><th>Collection</th><th>Products</th><th>GID</th></tr></thead>
+    <tbody>
+    {% for c in collections %}
+      <tr><td>{{ c.title }}</td><td>{{ c.products_count }}</td><td class="muted">{{ c.collection_id }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

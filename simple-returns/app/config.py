@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./dev.db"
 
     # Default plan for new installs
-    default_plan: str = "starter"  # "starter" | "growth"
+    default_plan: str = "free"  # "free" | "starter" | "growth"
+
+    # Shopify Billing API: create subscriptions in test mode (required on
+    # dev stores; set false in production).
+    shopify_billing_test: bool = True
 
     # Security
     encryption_key: str = ""
@@ -67,7 +71,7 @@ class Settings(BaseSettings):
 
     @property
     def resolved_default_plan(self) -> str:
-        return self.default_plan.lower() if self.default_plan else "starter"
+        return self.default_plan.lower() if self.default_plan else "free"
 
     @property
     def oauth_scopes(self) -> list[str]:
@@ -92,6 +96,7 @@ class Settings(BaseSettings):
     def webhook_topics(self) -> list[str]:
         return [
             "app/uninstalled",
+            "app_subscriptions/update",
             "returns/request",
             "returns/approve",
             "returns/decline",

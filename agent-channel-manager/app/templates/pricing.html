@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Pricing — Agent Channel Manager{% endblock %}
+{% block content %}
+<h1>Agent pricing rules</h1>
+<p class="muted">Rules apply in priority order. Floors protect margin; markups charge agents more; discounts cut prices (with a feed-risk warning); code exclusions block discount codes at agent checkout.</p>
+
+<div class="warn">
+  <strong>Google Shopping price-match:</strong> discount rules lower the price an agent pays below your advertised price, which can trigger Google feed disapproval. You'll be asked to acknowledge this risk when creating a discount rule. Prefer agent-only promotions (bundles, free shipping) to win on value without touching the advertised price.
+</div>
+
+<div class="card">
+  <h2>New pricing rule</h2>
+  <form method="post" action="/app/pricing{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+    <div class="form-row">
+      <label>Name <input type="text" name="name" required></label>
+      <label>Type
+        <select name="rule_type">
+          <option value="floor">Price floor (min agent price)</option>
+          <option value="markup_pct">Markup % vs storefront</option>
+          <option value="discount_pct">Discount % vs storefront</option>
+          <option value="code_exclusion">Discount code exclusion</option>
+        </select>
+      </label>
+      <label>Scope
+        <select name="scope">
+          <option value="all">All products</option>
+          <option value="product">One product</option>
+          <option value="collection">One collection</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Target GID (for product/collection scope) <input type="text" name="target_gid" size="40"></label>
+      <label>Target title <input type="text" name="target_title"></label>
+      <label>Value (amount or %) <input type="text" name="value" value="0"></label>
+      <label>Excluded code <input type="text" name="excluded_code" placeholder="e.g. WELCOME10"></label>
+    </div>
+    <div class="form-row">
+      <label><input type="checkbox" name="acknowledge_feed_risk" value="1"> I understand discount rules may undercut my advertised price and risk Google Shopping feed disapproval</label>
+      <button class="btn" type="submit">Add rule</button>
+    </div>
+  </form>
+  <p class="muted">{% if limit %}Free plan: {{ rules|length }}/{{ limit }} pricing rules used.{% else %}Pro plan: unlimited rules.{% endif %}</p>
+</div>
+
+<div class="card">
+  <h2>Active rules ({{ rules|length }})</h2>
+  {% if not rules %}
+  <p class="muted">No pricing rules yet.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Value / Code</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rules %}
+      <tr>
+        <td>{{ r.name }}</td>
+        <td>{{ r.rule_type.value }}</td>
+        <td>{{ r.scope.value }}{% if r.target_title %} — {{ r.target_title }}{% endif %}</td>
+        <td>{% if r.rule_type.value == 'code_exclusion' %}<span class="chip">{{ r.excluded_code }}</span>{% else %}{{ r.value }}{% endif %}</td>
+        <td>{% if r.enabled %}<span class="ok">enabled</span>{% else %}<span class="muted">paused</span>{% endif %}</td>
+        <td>
+          <form class="inline-form" method="post" action="/app/pricing/{{ r.id }}/toggle{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+            <button class="btn btn-secondary" type="submit">{% if r.enabled %}Pause{% else %}Enable{% endif %}</button>
+          </form>
+          <form class="inline-form" method="post" action="/app/pricing/{{ r.id }}/delete{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+            <button class="btn btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

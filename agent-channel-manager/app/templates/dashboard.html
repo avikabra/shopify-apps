@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Agent Channel Manager{% endblock %}
+{% block content %}
+<h1>Agent channel overview</h1>
+<p class="muted">Control what AI shopping agents (ChatGPT, Copilot, Google AI Mode) can discover from your catalog — and at what price.</p>
+
+<div class="stat-grid">
+  <div class="stat"><div class="num">{{ summary.visible_products }}</div><div class="lbl">Visible to agents</div></div>
+  <div class="stat"><div class="num">{{ summary.hidden_products }}</div><div class="lbl">Hidden from agents</div></div>
+  <div class="stat"><div class="num">{{ summary.avg_discount_pct }}%</div><div class="lbl">Avg agent discount</div></div>
+  <div class="stat"><div class="num">{{ summary.feed_risk_count }}</div><div class="lbl">Feed-risk items</div></div>
+  {% if summary.estimated_margin_total is not none %}
+  <div class="stat"><div class="num">${{ summary.estimated_margin_total }}</div><div class="lbl">Est. margin (1 unit ea.)</div></div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Channel mode</h2>
+  <form method="post" action="/app/mode{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+    <div class="form-row">
+      <label>Mode
+        <select name="mode">
+          <option value="blocklist" {% if shop.channel_mode == ChannelMode.BLOCKLIST %}selected{% endif %}>Blocklist — agents see everything except hidden items</option>
+          <option value="allowlist" {% if shop.channel_mode == ChannelMode.ALLOWLIST %}selected{% endif %}>Allowlist — agents see only approved items</option>
+        </select>
+      </label>
+      <button class="btn" type="submit">Save</button>
+    </div>
+  </form>
+  <p class="muted">Blocklist is the safe default. Switch to allowlist when you want tight control (e.g. MAP-sensitive catalogs).</p>
+</div>
+
+<div class="card">
+  <h2>Active agent-only promotions ({{ promotions|length }})</h2>
+  {% if not promotions %}
+  <p class="muted">No promotions yet. <a href="/app/promotions{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Create one</a> — bundles and free-shipping thresholds win agent comparisons on value, not price.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for p in promotions %}
+      <tr><td>{{ p.name }}</td><td>{{ p.promo_type.value.replace('_', ' ') }}</td><td>{% if p.enabled %}<span class="ok">active</span>{% else %}<span class="muted">paused</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Margin guard</h2>
+  <p>Preview exactly what an AI agent sees — products, prices, and margin impact — before it costs you money.</p>
+  <a class="btn" href="/app/simulator{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">Open simulator</a>
+</div>
+{% endblock %}

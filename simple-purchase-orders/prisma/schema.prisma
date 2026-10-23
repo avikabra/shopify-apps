@@ -51,6 +51,14 @@ model Shop {
   digestHourUtc Int     @default(13)
   instantAlerts Boolean @default(false)
 
+  // Freemium billing (see src/lib/plans.ts). Free tier has no Shopify charge;
+  // paid tiers map to AppSubscription records via subscriptionId.
+  plan           String    @default("free") // free | starter | growth
+  subscriptionId String?   // Shopify app subscription GID, e.g. gid://shopify/AppSubscription/123
+  billingStatus  String?   // Shopify subscription status: ACTIVE, CANCELLED, EXPIRED, ...
+  trialEndsAt    DateTime?
+  planUpdatedAt  DateTime  @default(now())
+
   suppliers       Supplier[]
   purchaseOrders  PurchaseOrder[]
   transfers       StockTransfer[]

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Promotions — Agent Channel Manager{% endblock %}
+{% block content %}
+<h1>Agent-only promotions</h1>
+<p class="muted">Promotions win agent comparisons on <em>value</em> instead of cutting your advertised price. Each promotion syncs an unlisted discount code to Shopify — never shown on your storefront, only redeemable through the agent channel.</p>
+
+<div class="card">
+  <h2>New promotion</h2>
+  <form method="post" action="/app/promotions{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+    <div class="form-row">
+      <label>Name <input type="text" name="name" required></label>
+      <label>Type
+        <select name="promo_type">
+          <option value="bundle">Bundle (products at a set price)</option>
+          <option value="free_shipping">Free shipping threshold</option>
+        </select>
+      </label>
+      <label>Discount % on the Shopify code <input type="text" name="discount_pct" value="10"></label>
+    </div>
+    <div class="form-row">
+      <label>Product GIDs for bundle (comma-separated, min 2) <input type="text" name="product_gids" size="50"></label>
+      <label>Bundle price <input type="text" name="bundle_price"></label>
+      <label>Free-shipping threshold <input type="text" name="threshold"></label>
+      <button class="btn" type="submit">Create</button>
+    </div>
+  </form>
+  <p class="muted">{% if limit %}Free plan: {{ promotions|length }}/{{ limit }} promotion used.{% else %}Pro plan: unlimited promotions.{% endif %}</p>
+</div>
+
+<div class="card">
+  <h2>Promotions ({{ promotions|length }})</h2>
+  {% if not promotions %}
+  <p class="muted">No promotions yet.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Details</th><th>Shopify discount</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for p in promotions %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td>{{ p.promo_type.value.replace('_', ' ') }}</td>
+        <td class="muted">
+          {% if p.promo_type == PromotionType.BUNDLE %}
+            {{ (p.config.get('product_gids') or [])|length }} products @ ${{ p.config.get('bundle_price') }}
+          {% else %}
+            free shipping over ${{ p.config.get('threshold') }}
+          {% endif %}
+        </td>
+        <td class="muted">{{ p.shopify_discount_id.split('/')[-1] if p.shopify_discount_id }}</td>
+        <td>{% if p.enabled %}<span class="ok">active</span>{% else %}<span class="muted">paused</span>{% endif %}</td>
+        <td>
+          <form class="inline-form" method="post" action="/app/promotions/{{ p.id }}/toggle{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+            <button class="btn btn-secondary" type="submit">{% if p.enabled %}Pause{% else %}Enable{% endif %}</button>
+          </form>
+          <form class="inline-form" method="post" action="/app/promotions/{{ p.id }}/delete{{ '?shop=' + request.query_params.get('shop') if request.query_params.get('shop') }}">
+            <button class="btn btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+{% if products %}
+<div class="card">
+  <h2>Product GIDs (for bundles)</h2>
+  <table>
+    <thead><tr><th>Product</th><th>Price</th><th>GID</th></tr></thead>
+    <tbody>
+    {% for p in products %}
+      <tr><td>{{ p.title }}</td><td>${{ p.price }}</td><td class="muted">{{ p.product_id }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

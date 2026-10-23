@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Agent Catalog Fixer — Dashboard{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Agent-Ready Catalog Fixer</h1>
+  <p class="muted">Make every product buyable by AI shopping agents (ChatGPT, Perplexity, Google AI Mode).
+     Plan: <strong>{{ plan }}</strong>{% if product_limit %} — free tier covers {{ product_limit }} products{% endif %}</p>
+  <div class="row-actions">
+    <button id="run-audit">Run full audit</button>
+    <a href="/app/billing{% if request.query_params.get('shop') %}?shop={{ request.query_params.get('shop') }}{% endif %}"><button class="secondary">Plan &amp; billing</button></a>
+    {% if plan != 'pro' %}
+    <button class="secondary" onclick="toast('Bulk auto-fix is a Pro feature.')">Bulk fix (Pro)</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="stats">
+    <div class="stat"><div class="num">{{ scored }}</div><div class="muted">Products scored</div></div>
+    <div class="stat"><div class="num">{% if avg_score is not none %}{{ avg_score }}{% else %}—{% endif %}</div><div class="muted">Average score</div></div>
+    <div class="stat"><div class="num"><span class="grade g{{ grade }}">{{ grade }}</span></div><div class="muted">Catalog grade</div></div>
+  </div>
+</div>
+
+{% if issue_counts %}
+<div class="card">
+  <h2>Issues across catalog</h2>
+  <div>
+    <span class="pill active" data-issue="">All</span>
+    {% for code, count in issue_counts.items() %}
+    <span class="pill" data-issue="{{ code }}">{{ code }} ({{ count }})</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Products</h2>
+  {% if rows %}
+  <table id="products-table">
+    <thead><tr><th></th><th>Product</th><th>Score</th><th>Top issues</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for a in rows %}
+      <tr data-issues="{{ a.issue_codes }}">
+        <td><span class="grade g{{ a.grade }}">{{ a.grade }}</span></td>
+        <td><strong>{{ a.title }}</strong><br><span class="muted">{{ a.fixes_applied }} fix(es) applied</span></td>
+        <td><div class="bar"><div style="width: {{ a.score }}%"></div></div><span class="muted">{{ a.score }}/100</span></td>
+        <td>
+          {% for i in a.issues[:3] %}
+          <span class="sev-{{ i.severity }}">{{ i.code }}</span>{% if not loop.last %}, {% endif %}
+          {% endfor %}
+          {% if a.issues|length > 3 %}<span class="muted">+{{ a.issues|length - 3 }} more</span>{% endif %}
+        </td>
+        <td><div class="row-actions">
+          {% for i in a.issues %}{% if i.auto_fixable %}
+          <button class="secondary" data-fix="{{ i.code }}" data-pid="{{ a.product_id }}" title="{{ i.fix }}">Fix: {{ i.code }}</button>
+          {% endif %}{% endfor %}
+        </div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No products scored yet. Click <strong>Run full audit</strong> to score your catalog.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('run-audit').addEventListener('click', async (e) => {
+  e.target.disabled = true; e.target.textContent = 'Auditing…';
+  const r = await api('/api/audit/run', {method: 'POST'});
+  toast(`Audit ${r.status}: ${r.products_scored} products, avg score ${r.avg_score}`);
+  location.reload();
+});
+document.querySelectorAll('.pill').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    const code = p.dataset.issue;
+    document.querySelectorAll('#products-table tbody tr').forEach(tr => {
+      tr.style.display = (!code || tr.dataset.issues.split(',').includes(code)) ? '' : 'none';
+    });
+  });
+});
+document.querySelectorAll('button[data-fix]').forEach(b => {
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    const r = await api(`/api/products/${b.dataset.pid}/fix?fix_code=${b.dataset.fix}`, {method: 'POST'});
+    toast(r.applied ? `Fixed: ${r.detail}` : `Not applied: ${r.detail}`);
+    if (r.applied) location.reload(); else b.disabled = false;
+  });
+});
+</script>
+{% endblock %}

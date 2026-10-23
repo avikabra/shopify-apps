@@ -4,5 +4,7 @@
 [[extensions]]
 type = "theme"
 name = "return-portal"
+handle = "return-portal"
+uid = "d026b65c-9ce3-7495-3804-6c5bda1687d966d218a0"
 
   [extensions.settings]

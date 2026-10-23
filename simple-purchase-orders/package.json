@@ -4,14 +4,16 @@
     "@shopify/shopify-api": "^15.0.0",
     "@shopify/shopify-app-express": "^8.0.2",
     "@shopify/shopify-app-session-storage-prisma": "^11.0.0",
+    "@types/pg": "^8.23.1",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.0",
     "pdfkit": "^0.17.1",
+    "pg": "^8.23.1",
     "prisma": "^6.4.0"
   },
-  "description": "Simple Purchase Orders & Stock Alerts \u2014 a dead-simple Stocky replacement for Shopify",
+  "description": "Simple Purchase Orders & Stock Alerts — a dead-simple Stocky replacement for Shopify",
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",

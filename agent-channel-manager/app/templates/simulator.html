@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Margin guard simulator — Agent Channel Manager{% endblock %}
+{% block content %}
+<h1>Margin guard simulator</h1>
+<p class="muted">Exactly what an AI agent sees: which products are visible, at what price, and what it does to your margin — before it costs you money.</p>
+
+<div class="stat-grid">
+  <div class="stat"><div class="num">{{ summary.visible_products }}/{{ summary.total_products }}</div><div class="lbl">Visible products</div></div>
+  <div class="stat"><div class="num">${{ storefront_total }}</div><div class="lbl">Storefront total</div></div>
+  <div class="stat"><div class="num">${{ agent_total }}</div><div class="lbl">Agent total</div></div>
+  <div class="stat"><div class="num">{{ summary.feed_risk_count }}</div><div class="lbl">Feed-risk items</div></div>
+  {% if summary.estimated_margin_total is not none %}
+  <div class="stat"><div class="num">${{ summary.estimated_margin_total }}</div><div class="lbl">Est. margin (1 unit ea.)</div></div>
+  {% endif %}
+</div>
+
+{% if summary.feed_risk_count %}
+<div class="warn">
+  <strong>{{ summary.feed_risk_count }} product(s) priced below your advertised price.</strong>
+  Agent checkout prices below the Google Shopping feed price risk feed disapproval. Consider replacing discount rules with agent-only promotions.
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Agent's view of your catalog</h2>
+  <table>
+    <thead><tr><th>Product</th><th>Visible</th><th>Storefront</th><th>Agent price</th><th>Margin</th><th>Rules applied</th><th>Flags</th></tr></thead>
+    <tbody>
+    {% for v in views %}
+      <tr>
+        <td>{{ v.product.title }}</td>
+        <td>{% if v.visible %}<span class="ok">yes</span>{% else %}<span class="risk">no</span>{% endif %}</td>
+        <td>${{ v.storefront_price }}</td>
+        <td>{% if v.visible %}${{ v.agent_price }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>
+          {% if v.margin_amount is not none %}${{ v.margin_amount }} ({{ v.margin_pct }}%){% else %}<span class="muted">unknown cost</span>{% endif %}
+        </td>
+        <td class="muted">
+          {{ v.visibility_reason }}
+          {% for r in v.applied_pricing_rules %}<span class="chip">{{ r }}</span>{% endfor %}
+          {% for c in v.excluded_codes %}<span class="chip">code blocked: {{ c }}</span>{% endfor %}
+        </td>
+        <td>{% if v.feed_risk %}<span class="risk">FEED RISK</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if promotions %}
+<div class="card">
+  <h2>Active agent-only promotions ({{ promotions|length }})</h2>
+  <p class="muted">These sweeten the agent's view without touching advertised prices:</p>
+  <ul>
+  {% for p in promotions %}
+    <li><strong>{{ p.name }}</strong> — {{ p.promo_type.value.replace('_', ' ') }}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

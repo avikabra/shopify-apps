@@ -34,37 +34,51 @@ export function useApi() {
 
   return useCallback(
     async <T = unknown>(path: string, options: RequestInit = {}): Promise<T> => {
-      const fetcher = authFetch ?? fetch;
-      const res = await fetcher(path, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(options.headers ?? {}),
-        },
-      });
+      type Fetcher = (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+      const doFetch = async (fetcher: Fetcher): Promise<T> => {
+        const res = await fetcher(path, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(options.headers ?? {}),
+          },
+        });
 
-      if (res.status === 402) {
-        // Billing required — bounce the top frame to the plan picker.
-        const data = (await res.json().catch(() => ({}))) as {
-          billingUrl?: string;
-        };
-        if (data.billingUrl) {
-          window.top!.location.href = data.billingUrl;
-          throw new ApiError(402, 'Billing required — redirecting to plan selection');
+        if (res.status === 402) {
+          // Billing required — bounce the top frame to the plan picker.
+          const data = (await res.json().catch(() => ({}))) as {
+            billingUrl?: string;
+          };
+          if (data.billingUrl) {
+            window.top!.location.href = data.billingUrl;
+            throw new ApiError(402, 'Billing required — redirecting to plan selection');
+          }
         }
-      }
 
-      if (res.status === 204) return undefined as T;
+        if (res.status === 204) return undefined as T;
 
-      const text = await res.text();
-      const data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T);
-      if (!res.ok) {
-        throw new ApiError(
-          res.status,
-          (data as { error?: string }).error || `Request failed (${res.status})`,
-        );
+        const text = await res.text();
+        const data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T);
+        if (!res.ok) {
+          throw new ApiError(
+            res.status,
+            (data as { error?: string }).error || `Request failed (${res.status})`,
+          );
+        }
+        return data as T;
+      };
+
+      try {
+        return await doFetch(authFetch ?? fetch);
+      } catch (e) {
+        // First paint can race App Bridge session-token readiness and come back
+        // 403; retry once with an authenticated fetch before surfacing the error.
+        if (e instanceof ApiError && e.status === 403 && authFetch) {
+          await new Promise((r) => setTimeout(r, 750));
+          return doFetch(authFetch);
+        }
+        throw e;
       }
-      return data as T;
     },
     [authFetch],
   );

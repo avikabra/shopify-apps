@@ -38,6 +38,16 @@ export function getShopify(): ShopifyApp {
       path: '/api/webhooks',
     },
     sessionStorage: new PrismaSessionStorage(prisma),
+    future: {
+      // The app uses Shopify's managed install flow (use_legacy_install_flow
+      // = false), so there is no OAuth callback. Session tokens from App
+      // Bridge are exchanged for access tokens on demand.
+      tokenExchange: true,
+      // Shopify no longer accepts non-expiring offline tokens for the
+      // Admin API on this app; exchange for expiring tokens instead and
+      // let the library refresh them automatically.
+      expiringOfflineAccessTokens: true,
+    },
   });
   return cached;
 }
